@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "name": "ARM none eabi GCC",
+            "includePath": [
+                "${workspaceFolder}/cmsisg0",
+                "${workspaceFolder}/cmsisg0/registers",
+                "${workspaceFolder}/cmsisg0/core",
+                "${workspaceFolder}/halg0/Inc", 
+                "${workspaceFolder}/app"
+                
+                
+            ],
+            "defines": [
+                "STM32G0B1xx",
+                "USE_HAL_DRIVER"
+            ],
+            "cStandard": "gnu11",
+            "compilerPath": "/usr/bin/gcc",
+            "intelliSenseMode": "gcc-x64"
+        }
+    ],
+    "version": 4
+}

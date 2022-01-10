@@ -1,0 +1,25 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Cortex Debug",
+            "cwd": "${workspaceRoot}",
+            "executable": "./Build/temp.elf",
+            "request": "launch",
+            "type": "cortex-debug",
+            "servertype": "jlink",
+            "interface": "swd",
+            "debuggerArgs": [
+                "-iex","set auto-load safe-path /",
+            ],
+            "device": "STM32G0B1RE",
+            "serverpath": "/usr/bin/JLinkGDBServer",
+            "armToolchainPath": "/usr/bin",
+            "svdFile": "./cmsisg0/svd/STM32G0B1.svd",
+            "runToMain": true
+        }
+    ]
+}

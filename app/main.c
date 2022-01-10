@@ -61,6 +61,7 @@ int main( void )
         CAN1_transmits();
         HAL_Delay(2000u);
         MOD_CUBA_CyclicalBusAnalysis(&CUBA_Handle);
+
     }
 
     return 0u;
@@ -170,4 +171,3 @@ void CUBA_init(void)
     CUBA_Handle.CANRxHeader = &RxHeader2;
     MOD_CUBA_Init(&CUBA_Handle);
 }
-

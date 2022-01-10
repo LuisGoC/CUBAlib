@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "app_bsp.h": "c",
+        "iostream": "cpp"
+    }
+}
+

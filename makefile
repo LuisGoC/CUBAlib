@@ -60,7 +60,7 @@ build :
 
 #borrar archivos generados
 clean :
-	rm -rf Output
+	rm -rf Build/
 
 #---flash the image into the mcu-------------------------------------------------------------------
 flash :
