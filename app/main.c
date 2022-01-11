@@ -1,8 +1,5 @@
 #include "stm32g0xx.h"
-#include <stdint.h>
 #include "app_bsp.h"
-#include <string.h>
-#include <stdio.h>
 #include "CUBA.h"
 
 /**------------------------------------------------------------------------------------------------
@@ -29,6 +26,7 @@ FDCAN_RxHeaderTypeDef RxHeader1; //Data structure with reception message setting
 FDCAN_HandleTypeDef CAN2_struct; //structure with CAN controller settings
 FDCAN_TxHeaderTypeDef TxHeader2; //Data structure with transmission message settings
 FDCAN_RxHeaderTypeDef RxHeader2; //Data structure with reception message settings
+FDCAN_FilterTypeDef Filter2_struct;
 uint8_t msgBuffer[8];
 
 
@@ -59,8 +57,8 @@ int main( void )
     for( ; ; )
     {
         CAN1_transmits();
-        HAL_Delay(2000u);
-        MOD_CUBA_CyclicalBusAnalysis(&CUBA_Handle);
+        HAL_Delay(3000u);
+        //MOD_CUBA_PeriodicTask(&CUBA_Handle);
 
     }
 
@@ -140,7 +138,7 @@ void CAN1_Rx(void)
     RxHeader1.DataLength = FDCAN_DLC_BYTES_4;    //Data frame size of 5 bytes
     RxHeader1.ErrorStateIndicator = FDCAN_ESI_PASSIVE; 
     RxHeader1.FDFormat = FDCAN_CLASSIC_CAN;  
-    RxHeader1.FilterIndex = 1;   
+    //RxHeader1.FilterIndex = 1;   
 }
 
 void CAN1_transmits(void)
@@ -169,5 +167,14 @@ void CUBA_init(void)
     CUBA_Handle.UARTHandler = &UART_struct;
     CUBA_Handle.CANHandler = &CAN2_struct;
     CUBA_Handle.CANRxHeader = &RxHeader2;
+    CUBA_Handle.CANFilterHeader = &Filter2_struct;
     MOD_CUBA_Init(&CUBA_Handle);
+}
+
+void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo1ITs)
+{
+    if((hfdcan->Instance == FDCAN2) && (RxFifo1ITs == FDCAN_IT_RX_FIFO1_FULL))
+    {
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, SET);
+    }
 }

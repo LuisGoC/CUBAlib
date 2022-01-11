@@ -17,7 +17,7 @@
     }CUBA_HandleTypeDef;
 
     HAL_StatusTypeDef MOD_CUBA_Init( CUBA_HandleTypeDef *hcuba );
-    HAL_StatusTypeDef MOD_CUBA_CyclicalBusAnalysis( CUBA_HandleTypeDef *hcuba );
+    HAL_StatusTypeDef MOD_CUBA_PeriodicTask( CUBA_HandleTypeDef *hcuba );
     void dump( CUBA_HandleTypeDef *hcuba, uint8_t *str);
     uint8_t intToHex(uint32_t val, uint8_t* str);
     void integerToString(uint32_t value, uint8_t *str);
