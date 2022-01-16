@@ -27,6 +27,7 @@ FDCAN_HandleTypeDef CAN2_struct; //structure with CAN controller settings
 FDCAN_TxHeaderTypeDef TxHeader2; //Data structure with transmission message settings
 FDCAN_RxHeaderTypeDef RxHeader2; //Data structure with reception message settings
 FDCAN_FilterTypeDef Filter2_struct;
+DMA_HandleTypeDef hdma_usart2_tx;
 uint8_t msgBuffer[8];
 
 
@@ -45,21 +46,40 @@ __IO uint8_t uart_rx_cplt_flag = RESET;
 
 int main( void )
 {
+    uint32_t tick1 = 0;
+    uint32_t tick2 = 0;
+    uint32_t tick3 = 0;
+
     HAL_Init();
     GPIO_init();
     UART_init();
     CAN1_init();
     CAN1_Tx();
     CUBA_init();
-    
+
+    tick1 = HAL_GetTick();
+    tick2 = HAL_GetTick();
+    tick3 = HAL_GetTick();
+
     (void)HAL_FDCAN_Start(&CAN1_struct); //FDCAN1 leaves initialization mode and starts normal mode
     (void)HAL_UART_Receive_IT(&UART_struct, &uart_rx_byte, 1);
     for( ; ; )
     {
-        CAN1_transmits();
-        HAL_Delay(3000u);
-        //MOD_CUBA_PeriodicTask(&CUBA_Handle);
-
+        if((HAL_GetTick() - tick1) >= 1000)
+        {
+            tick1 = HAL_GetTick();
+            CAN1_transmits();
+        }
+        if((HAL_GetTick() - tick2) >= 1000)
+        {
+            tick2 = HAL_GetTick();
+            MOD_CUBA_PeriodicTask(&CUBA_Handle);
+        }
+        if((HAL_GetTick() - tick3) >= 50)
+        {
+            tick3 = HAL_GetTick();
+            HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_1);
+        }
     }
 
     return 0u;
@@ -168,13 +188,6 @@ void CUBA_init(void)
     CUBA_Handle.CANHandler = &CAN2_struct;
     CUBA_Handle.CANRxHeader = &RxHeader2;
     CUBA_Handle.CANFilterHeader = &Filter2_struct;
+    CUBA_Handle.DMAHandler = &hdma_usart2_tx;
     MOD_CUBA_Init(&CUBA_Handle);
-}
-
-void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo1ITs)
-{
-    if((hfdcan->Instance == FDCAN2) && (RxFifo1ITs == FDCAN_IT_RX_FIFO1_FULL))
-    {
-        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, SET);
-    }
 }

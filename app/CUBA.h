@@ -1,9 +1,11 @@
 #ifndef SERIAL_CAN_H_
     #define SERIAL_CAN_H_
 
-    #include "app_bsp.h"
     #include "stm32g0xx.h"
     #include <stdint.h>
+    #include <string.h>
+
+    #define DUMP_LENGTH 68
 
     typedef struct
     {
@@ -12,6 +14,8 @@
         FDCAN_TxHeaderTypeDef   *CANTxHeader;
         FDCAN_RxHeaderTypeDef   *CANRxHeader;
         FDCAN_FilterTypeDef     *CANFilterHeader;
+        DMA_HandleTypeDef       *DMAHandler;
+        uint8_t                 pDumpBuff[100];
         uint8_t                 pRxMsg[8];
         uint8_t                 pRxFlag;
     }CUBA_HandleTypeDef;

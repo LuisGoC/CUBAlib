@@ -1,4 +1,3 @@
-#include "app_bsp.h"
 #include "CUBA.h"
 
 HAL_StatusTypeDef MOD_CUBA_Init( CUBA_HandleTypeDef *hcuba )
@@ -12,6 +11,24 @@ HAL_StatusTypeDef MOD_CUBA_Init( CUBA_HandleTypeDef *hcuba )
     {
         return HAL_ERROR;
     }
+
+    //DMA init
+    __HAL_RCC_DMA1_CLK_ENABLE();
+    hcuba->DMAHandler->Instance = DMA1_Channel1;
+    hcuba->DMAHandler->Init.Request = DMA_REQUEST_USART2_TX;
+    hcuba->DMAHandler->Init.Direction = DMA_MEMORY_TO_PERIPH;
+    hcuba->DMAHandler->Init.PeriphInc = DMA_PINC_DISABLE;
+    hcuba->DMAHandler->Init.MemInc = DMA_MINC_ENABLE;
+    hcuba->DMAHandler->Init.PeriphDataAlignment = DMA_PDATAALIGN_BYTE;
+    hcuba->DMAHandler->Init.MemDataAlignment = DMA_MDATAALIGN_BYTE;
+    hcuba->DMAHandler->Init.Mode = DMA_NORMAL;
+    hcuba->DMAHandler->Init.Priority = DMA_PRIORITY_LOW;
+    HAL_DMA_Init(hcuba->DMAHandler);
+
+    HAL_NVIC_SetPriority(DMA1_Channel1_IRQn, 0, 0);
+    HAL_NVIC_EnableIRQ(DMA1_Channel1_IRQn);
+
+    do{ hcuba->UARTHandler->hdmatx = hcuba->DMAHandler; hcuba->DMAHandler->Parent = (hcuba->UARTHandler); } while(0U);
 
     //FDCAN init
     if(hcuba->CANHandler == NULL)
@@ -35,6 +52,9 @@ HAL_StatusTypeDef MOD_CUBA_Init( CUBA_HandleTypeDef *hcuba )
         hcuba->CANHandler->Init.NominalTimeSeg1 = 13;
         hcuba->CANHandler->Init.NominalTimeSeg2 = 2;
         HAL_FDCAN_Init(hcuba->CANHandler);
+
+        HAL_NVIC_SetPriority(TIM17_FDCAN_IT1_IRQn, 2, 0);
+        HAL_NVIC_EnableIRQ(TIM17_FDCAN_IT1_IRQn);
     }
 
     //filter config
@@ -77,8 +97,6 @@ HAL_StatusTypeDef MOD_CUBA_Init( CUBA_HandleTypeDef *hcuba )
 
  HAL_StatusTypeDef MOD_CUBA_PeriodicTask( CUBA_HandleTypeDef *hcuba )
 {
-    uint8_t pDumpBuff[100] = {0};
-
     if(hcuba == NULL)
     {
         return HAL_ERROR;
@@ -91,8 +109,8 @@ HAL_StatusTypeDef MOD_CUBA_Init( CUBA_HandleTypeDef *hcuba )
         {
             hcuba->pRxFlag = 1;
             //Funcion de dump
-            dump(hcuba, pDumpBuff);
-            HAL_UART_Transmit(hcuba->UARTHandler, pDumpBuff, sizeof(pDumpBuff), HAL_MAX_DELAY);
+            dump(hcuba, hcuba->pDumpBuff);
+            HAL_UART_Transmit_DMA(hcuba->UARTHandler, hcuba->pDumpBuff, DUMP_LENGTH);
         }
         else
         {
@@ -238,10 +256,17 @@ void integerToString(uint32_t value, uint8_t *str)
 
 __weak void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo1ITs)
 {
+    /*
     if((hfdcan->Instance == FDCAN2) && (RxFifo1ITs == FDCAN_IT_RX_FIFO1_FULL))
     {
-        //coming soon...
+        //If FIFO1 overwrite
     }
+    */
+}
+
+__weak void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
+{
+
 }
 
 
