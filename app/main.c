@@ -47,8 +47,6 @@ __IO uint8_t uart_rx_cplt_flag = RESET;
 int main( void )
 {
     uint32_t tick1 = 0;
-    uint32_t tick2 = 0;
-    uint32_t tick3 = 0;
 
     HAL_Init();
     GPIO_init();
@@ -58,27 +56,16 @@ int main( void )
     CUBA_init();
 
     tick1 = HAL_GetTick();
-    tick2 = HAL_GetTick();
-    tick3 = HAL_GetTick();
 
     (void)HAL_FDCAN_Start(&CAN1_struct); //FDCAN1 leaves initialization mode and starts normal mode
+    MOD_CUBA_Start(&CUBA_Handle);
     (void)HAL_UART_Receive_IT(&UART_struct, &uart_rx_byte, 1);
     for( ; ; )
     {
-        if((HAL_GetTick() - tick1) >= 1000)
+        if((HAL_GetTick() - tick1) >= 10)
         {
             tick1 = HAL_GetTick();
             CAN1_transmits();
-        }
-        if((HAL_GetTick() - tick2) >= 1000)
-        {
-            tick2 = HAL_GetTick();
-            MOD_CUBA_PeriodicTask(&CUBA_Handle);
-        }
-        if((HAL_GetTick() - tick3) >= 50)
-        {
-            tick3 = HAL_GetTick();
-            HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_1);
         }
     }
 
@@ -109,7 +96,7 @@ void GPIO_init(void)
 void UART_init(void)
 {
     UART_struct.Instance = USART2;
-    UART_struct.Init.BaudRate = 9600;
+    UART_struct.Init.BaudRate = 115200;
     UART_struct.Init.ClockPrescaler = UART_PRESCALER_DIV1;
     UART_struct.Init.HwFlowCtl = UART_HWCONTROL_NONE;
     UART_struct.Init.Mode = UART_MODE_TX_RX;
@@ -134,7 +121,7 @@ void CAN1_init(void)
     CAN1_struct.Init.ProtocolException = DISABLE;
     CAN1_struct.Init.StdFiltersNbr = 0;
     CAN1_struct.Init.FrameFormat = FDCAN_FRAME_CLASSIC;
-    CAN1_struct.Init.NominalPrescaler = 10;
+    CAN1_struct.Init.NominalPrescaler = 30;
     CAN1_struct.Init.NominalSyncJumpWidth = 1;
     CAN1_struct.Init.NominalTimeSeg1 = 13;
     CAN1_struct.Init.NominalTimeSeg2 = 2;
@@ -157,8 +144,7 @@ void CAN1_Rx(void)
     RxHeader1.BitRateSwitch = FDCAN_BRS_OFF;
     RxHeader1.DataLength = FDCAN_DLC_BYTES_4;    //Data frame size of 5 bytes
     RxHeader1.ErrorStateIndicator = FDCAN_ESI_PASSIVE; 
-    RxHeader1.FDFormat = FDCAN_CLASSIC_CAN;  
-    //RxHeader1.FilterIndex = 1;   
+    RxHeader1.FDFormat = FDCAN_CLASSIC_CAN;    
 }
 
 void CAN1_transmits(void)
@@ -170,15 +156,11 @@ void CAN1_transmits(void)
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-    UNUSED(huart);
-    static uint8_t i = 0;
-    uart_rx_buffer[i] = uart_rx_byte;
-    i++;
-    if(uart_rx_buffer[i-1u] == (uint8_t)'\r')
+    if(huart->Instance == USART2)
     {
-        uart_rx_cplt_flag = SET;
-        i = 0;
+        MOD_CUBA_GetData(&CUBA_Handle, uart_rx_byte);
     }
+    
     (void)HAL_UART_Receive_IT(&UART_struct, &uart_rx_byte, 1);
 }
 
@@ -187,6 +169,7 @@ void CUBA_init(void)
     CUBA_Handle.UARTHandler = &UART_struct;
     CUBA_Handle.CANHandler = &CAN2_struct;
     CUBA_Handle.CANRxHeader = &RxHeader2;
+    CUBA_Handle.CANTxHeader = &TxHeader2;
     CUBA_Handle.CANFilterHeader = &Filter2_struct;
     CUBA_Handle.DMAHandler = &hdma_usart2_tx;
     MOD_CUBA_Init(&CUBA_Handle);
