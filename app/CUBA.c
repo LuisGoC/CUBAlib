@@ -30,6 +30,8 @@ HAL_StatusTypeDef MOD_CUBA_Init( CUBA_HandleTypeDef *hcuba )
         return HAL_ERROR;
     }
 
+    memset(hcuba->CUBA_buffer, 0, sizeof(hcuba->CUBA_buffer));
+
     /* DMA peripheral clock enable */
     __HAL_RCC_DMA1_CLK_ENABLE();
 
@@ -75,7 +77,7 @@ HAL_StatusTypeDef MOD_CUBA_Init( CUBA_HandleTypeDef *hcuba )
         hcuba->CANHandler->Init.ExtFiltersNbr           =   0;
         hcuba->CANHandler->Init.StdFiltersNbr           =   0;
         hcuba->CANHandler->Init.FrameFormat             =   FDCAN_FRAME_CLASSIC;
-        hcuba->CANHandler->Init.NominalPrescaler        =   10;
+        hcuba->CANHandler->Init.NominalPrescaler        =   30;
         hcuba->CANHandler->Init.NominalSyncJumpWidth    =   1;
         hcuba->CANHandler->Init.NominalTimeSeg1         =   13;
         hcuba->CANHandler->Init.NominalTimeSeg2         =   2;
@@ -183,6 +185,8 @@ HAL_StatusTypeDef MOD_CUBA_Init( CUBA_HandleTypeDef *hcuba )
 static void CUBA_string( CUBA_HandleTypeDef *hcuba, CUBA_RxMsgTypeDef *hrxmsg)
 {
     char word[10] = {0};
+
+    memset(hcuba->CUBA_buffer, 0, sizeof(hcuba->CUBA_buffer));
     
     /* Get identifier of Rx FDCAN2 msg and convert it to hex string */
     intToHex(hrxmsg->RxHeaderMsg.Identifier, (uint8_t*)word);

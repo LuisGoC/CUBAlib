@@ -109,7 +109,7 @@ void GPIO_init(void)
 void UART_init(void)
 {
     UART_struct.Instance = USART2;
-    UART_struct.Init.BaudRate = 9600;
+    UART_struct.Init.BaudRate = 115200;
     UART_struct.Init.ClockPrescaler = UART_PRESCALER_DIV1;
     UART_struct.Init.HwFlowCtl = UART_HWCONTROL_NONE;
     UART_struct.Init.Mode = UART_MODE_TX_RX;
@@ -123,7 +123,7 @@ void UART_init(void)
 
 void CAN1_init(void)
 {
-    /* SysClock/Pres = 16Mhz, q = 63ns */
+    /* SysClock/Pres = 48Mhz */
     CAN1_struct.Instance = FDCAN1; 
     CAN1_struct.Init.Mode = FDCAN_MODE_NORMAL;
     CAN1_struct.Init.AutoRetransmission = ENABLE;
@@ -134,7 +134,7 @@ void CAN1_init(void)
     CAN1_struct.Init.ProtocolException = DISABLE;
     CAN1_struct.Init.StdFiltersNbr = 0;
     CAN1_struct.Init.FrameFormat = FDCAN_FRAME_CLASSIC;
-    CAN1_struct.Init.NominalPrescaler = 10;
+    CAN1_struct.Init.NominalPrescaler = 30;
     CAN1_struct.Init.NominalSyncJumpWidth = 1;
     CAN1_struct.Init.NominalTimeSeg1 = 13;
     CAN1_struct.Init.NominalTimeSeg2 = 2;
@@ -157,8 +157,7 @@ void CAN1_Rx(void)
     RxHeader1.BitRateSwitch = FDCAN_BRS_OFF;
     RxHeader1.DataLength = FDCAN_DLC_BYTES_4;    //Data frame size of 5 bytes
     RxHeader1.ErrorStateIndicator = FDCAN_ESI_PASSIVE; 
-    RxHeader1.FDFormat = FDCAN_CLASSIC_CAN;  
-    //RxHeader1.FilterIndex = 1;   
+    RxHeader1.FDFormat = FDCAN_CLASSIC_CAN;   
 }
 
 void CAN1_transmits(void)
