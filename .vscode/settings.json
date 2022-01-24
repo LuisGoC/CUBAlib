@@ -1,7 +1,8 @@
 {
     "files.associations": {
         "app_bsp.h": "c",
-        "iostream": "cpp"
+        "iostream": "cpp",
+        "sstream": "c"
     }
 }
 

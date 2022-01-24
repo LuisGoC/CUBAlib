@@ -1,4 +1,14 @@
 #include "CUBA.h"
+#include "queue.h"
+
+static     void         CUBA_string          ( CUBA_HandleTypeDef *hcuba, CUBA_RxMsgTypeDef *hrxmsg );
+static     uint8_t      intToHex             ( uint32_t val, uint8_t* str );
+static     void         integerToString      ( uint32_t value, uint8_t *str );
+
+static QUEUE_HandleTypeDef fdcan_queue_struct   =   {0};
+static CUBA_HandleTypeDef  *CUBA_struct         =   NULL;
+static CUBA_RxMsgTypeDef   RxMsgToWrite         =   {0};
+static CUBA_RxMsgTypeDef   RxMsgToRead          =   {0};
 
 /**
   * @brief Initializes the CUBA library necessary peripherals.
@@ -97,6 +107,7 @@ HAL_StatusTypeDef MOD_CUBA_Init( CUBA_HandleTypeDef *hcuba )
     /* Enable interrupt notifications when FIFO1 is full */
     (void)HAL_FDCAN_ConfigInterruptLines(hcuba->CANHandler, FDCAN_IT_GROUP_RX_FIFO1, FDCAN_INTERRUPT_LINE1);
     (void)HAL_FDCAN_ActivateNotification(hcuba->CANHandler, FDCAN_IT_RX_FIFO1_FULL, FDCAN_RX_FIFO1);
+    (void)HAL_FDCAN_ActivateNotification(hcuba->CANHandler, FDCAN_IT_RX_FIFO1_NEW_MESSAGE, FDCAN_RX_FIFO1);
 
     /* Check FDCAN2 Rx Handle */
     if(hcuba->CANRxHeader == NULL)
@@ -112,7 +123,13 @@ HAL_StatusTypeDef MOD_CUBA_Init( CUBA_HandleTypeDef *hcuba )
         hcuba->CANRxHeader->FDFormat = FDCAN_CLASSIC_CAN;
     }
 
-    hcuba->pRxFlag = 0;
+    //FDCAN queue initialization
+    fdcan_queue_struct.Buffer = hcuba->RxMsgBuffer;
+    fdcan_queue_struct.Elements = 10;
+    fdcan_queue_struct.Size = sizeof(CUBA_RxMsgTypeDef);
+    HIL_QUEUE_Init(&fdcan_queue_struct);
+
+    CUBA_struct = hcuba;
 
     /* FDCAN2 Start */
     HAL_FDCAN_Start(hcuba->CANHandler);
@@ -135,16 +152,12 @@ HAL_StatusTypeDef MOD_CUBA_Init( CUBA_HandleTypeDef *hcuba )
         return HAL_ERROR;
     }
 
-    /* If FIFO1 level isn't empty */
-    if(HAL_FDCAN_GetRxFifoFillLevel(hcuba->CANHandler, FDCAN_RX_FIFO1) != 0)
+    if(HIL_QUEUE_IsEmpty(&fdcan_queue_struct) == 0u)
     {
-        /* Get FIFO1 Message */
-        if(HAL_FDCAN_GetRxMessage(hcuba->CANHandler, FDCAN_RX_FIFO1, hcuba->CANRxHeader, hcuba->pRxMsg) == HAL_OK)
+        if(HIL_QUEUE_Read(&fdcan_queue_struct, &RxMsgToRead) == 1u)
         {
-            hcuba->pRxFlag = 1;
-
             /* create character string with Rx FDCAN message data */ 
-            CUBA_string(hcuba, hcuba->CUBA_buffer);
+            CUBA_string(hcuba, &RxMsgToRead);
 
             /* DMA UART Transmit of Rx FDCAN analyzed data */
             HAL_UART_Transmit_DMA(hcuba->UARTHandler, hcuba->CUBA_buffer, STRING_LENGTH);
@@ -155,6 +168,7 @@ HAL_StatusTypeDef MOD_CUBA_Init( CUBA_HandleTypeDef *hcuba )
         }
     }
 
+    
     return HAL_OK;
 }
 
@@ -166,83 +180,70 @@ HAL_StatusTypeDef MOD_CUBA_Init( CUBA_HandleTypeDef *hcuba )
   * @param str   Pointer to data buffer (u8 data elements).
   * @retval none
   **/
-void CUBA_string( CUBA_HandleTypeDef *hcuba, uint8_t *str)
+static void CUBA_string( CUBA_HandleTypeDef *hcuba, CUBA_RxMsgTypeDef *hrxmsg)
 {
     char word[10] = {0};
     
     /* Get identifier of Rx FDCAN2 msg and convert it to hex string */
-    intToHex(hcuba->CANRxHeader->Identifier, (uint8_t*)word);
-    strcat((char*)str, word+4);
-    strcat((char*)str, S_DSPACE);
+    intToHex(hrxmsg->RxHeaderMsg.Identifier, (uint8_t*)word);
+    strcat((char*)hcuba->CUBA_buffer, word+4);
+    strcat((char*)hcuba->CUBA_buffer, S_DSPACE);
 
     /* IdType equals FDCAN_STANDARD_ID */
-    if(hcuba->CANRxHeader->IdType == FDCAN_STANDARD_ID)
+    if(hrxmsg->RxHeaderMsg.IdType == FDCAN_STANDARD_ID)
     {
-        strcat((char*)str, S_SDCAN);
-        strcat((char*)str, S_DSPACE);
+        strcat((char*)hcuba->CUBA_buffer, S_SDCAN);
+        strcat((char*)hcuba->CUBA_buffer, S_DSPACE);
     }
     else   /* FDCAN_EXTENDED_ID */
     {
-        strcat((char*)str, S_FDCAN);
-        strcat((char*)str, S_DSPACE);
+        strcat((char*)hcuba->CUBA_buffer, S_FDCAN);
+        strcat((char*)hcuba->CUBA_buffer, S_DSPACE);
     }
 
     /* Get DLC of Rx FDCAN2 msg and convert it to string */
-    integerToString(hcuba->CANRxHeader->DataLength >> 16, (uint8_t*)word);
-    strcat((char*)str, word);
-    strcat((char*)str, S_DSPACE);
-
-    /* Rx Msg */
-    if(hcuba->pRxFlag == 1)
-    {
-        hcuba->pRxFlag = 0;
-        strcat((char*)str, S_RX);
-        strcat((char*)str, S_DSPACE);
-    }
-    else /* Tx Msg */
-    {
-        strcat((char*)str, S_TX);
-        strcat((char*)str, S_DSPACE);
-    }
+    integerToString(hrxmsg->RxHeaderMsg.DataLength >> 16, (uint8_t*)word);
+    strcat((char*)hcuba->CUBA_buffer, word);
+    strcat((char*)hcuba->CUBA_buffer, S_DSPACE);
 
     /* RxFrameType equals FDCAN_DATA_FRAME */
-    if(hcuba->CANRxHeader->RxFrameType == FDCAN_DATA_FRAME)
+    if(hrxmsg->RxHeaderMsg.RxFrameType == FDCAN_DATA_FRAME)
     {
-        strcat((char*)str, S_DATA);
-        strcat((char*)str, S_DSPACE);
+        strcat((char*)hcuba->CUBA_buffer, S_DATA);
+        strcat((char*)hcuba->CUBA_buffer, S_DSPACE);
     }
     else  /* RxFrameType equals FDCAN_REMOTE_FRAME */
     {
-        strcat((char*)str, S_REMOTE);
-        strcat((char*)str, S_DSPACE);
+        strcat((char*)hcuba->CUBA_buffer, S_REMOTE);
+        strcat((char*)hcuba->CUBA_buffer, S_DSPACE);
     }
 
     /* Data Payload */
-    for(uint8_t i = 0; i < (hcuba->CANRxHeader->DataLength >> 16); i++)
+    for(uint8_t i = 0; i < (hrxmsg->RxHeaderMsg.DataLength >> 16); i++)
     {
-        intToHex(hcuba->pRxMsg[i], (uint8_t*)word);
-        strcat((char*)str, word+6);
-        strcat((char*)str, S_DSPACE);
+        intToHex(hrxmsg->RxDataMsg[i], (uint8_t*)word);
+        strcat((char*)hcuba->CUBA_buffer, word+6);
+        strcat((char*)hcuba->CUBA_buffer, S_DSPACE);
     }
 
     /* Data in ASCII */
-    for(uint8_t i = 0; i < (hcuba->CANRxHeader->DataLength >> 16); i++)
+    for(uint8_t i = 0; i < (hrxmsg->RxHeaderMsg.DataLength >> 16); i++)
     {
         char data[2] = {0};
         /* ASCII data */
-        if((hcuba->pRxMsg[i] >= 32) && (hcuba->pRxMsg[i] <= 126)) 
+        if((hrxmsg->RxDataMsg[i] >= 32) && (hrxmsg->RxDataMsg[i] <= 126)) 
         {
-            data[0] = hcuba->pRxMsg[i];
-            strcat((char*)str, data);
+            data[0] = hrxmsg->RxDataMsg[i];
+            strcat((char*)hcuba->CUBA_buffer, data);
         }
         else /* No ASCII data */
         {
-            strcat((char*)str, ".");
+            strcat((char*)hcuba->CUBA_buffer, ".");
         }
     }
 
     /* end of string */
-    strcat((char*)str, "\n");
+    strcat((char*)hcuba->CUBA_buffer, "\n");
 
 }
 
@@ -252,7 +253,7 @@ void CUBA_string( CUBA_HandleTypeDef *hcuba, uint8_t *str)
   * @param str   Pointer to data buffer (u8 data elements).
   * @retval string length
   **/
-uint8_t intToHex(uint32_t val, uint8_t* str)
+static uint8_t intToHex(uint32_t val, uint8_t* str)
 {
     /* Local variables */
     uint8_t index = 0;          //string index
@@ -297,7 +298,7 @@ uint8_t intToHex(uint32_t val, uint8_t* str)
   * @param str   Pointer to data buffer (u8 data elements).
   * @retval none
   **/
-void integerToString(uint32_t value, uint8_t *str)
+static void integerToString(uint32_t value, uint8_t *str)
 {
     uint8_t temp[12] = {0}; //temporal array
     uint8_t index = 10;     //index equals last position
@@ -322,17 +323,29 @@ void integerToString(uint32_t value, uint8_t *str)
     }
 }
 
-__weak void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo1ITs)
+void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo1ITs)
 {
-    /*
+    
     if((hfdcan->Instance == FDCAN2) && (RxFifo1ITs == FDCAN_IT_RX_FIFO1_FULL))
     {
         //If FIFO1 overwrite
+        
     }
-    */
+    if((hfdcan->Instance == FDCAN2) && (RxFifo1ITs == FDCAN_IT_RX_FIFO1_NEW_MESSAGE))
+    {
+        //If there's a new message in FIFO1
+        /* Get FIFO1 Message */
+        if(HAL_FDCAN_GetRxMessage(CUBA_struct->CANHandler, FDCAN_RX_FIFO1, CUBA_struct->CANRxHeader, CUBA_struct->pRxMsg) == HAL_OK)
+        {
+            memcpy(&RxMsgToWrite.RxHeaderMsg, CUBA_struct->CANRxHeader, sizeof(RxMsgToWrite.RxHeaderMsg));
+            memcpy(&RxMsgToWrite.RxDataMsg, CUBA_struct->pRxMsg, sizeof(RxMsgToWrite.RxDataMsg));
+            HIL_QUEUE_Write(&fdcan_queue_struct, &RxMsgToWrite);
+        }   
+    }
+    
 }
 
-__weak void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 {
 
 }
