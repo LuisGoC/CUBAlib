@@ -23,6 +23,7 @@ UART_HandleTypeDef UART_struct; //Uart structure
 FDCAN_HandleTypeDef CAN1_struct; //structure with CAN controller settings
 FDCAN_TxHeaderTypeDef TxHeader1; //Data structure with transmission message settings
 FDCAN_RxHeaderTypeDef RxHeader1; //Data structure with reception message settings
+FDCAN_FilterTypeDef Filter1_struct;
 FDCAN_HandleTypeDef CAN2_struct; //structure with CAN controller settings
 FDCAN_TxHeaderTypeDef TxHeader2; //Data structure with transmission message settings
 FDCAN_RxHeaderTypeDef RxHeader2; //Data structure with reception message settings
@@ -65,7 +66,7 @@ int main( void )
     (void)HAL_UART_Receive_IT(&UART_struct, &uart_rx_byte, 1);
     for( ; ; )
     {
-        if((HAL_GetTick() - tick1) >= 1000)
+        if((HAL_GetTick() - tick1) >= 30000)
         {
             tick1 = HAL_GetTick();
             CAN1_transmits();
@@ -75,10 +76,14 @@ int main( void )
             tick2 = HAL_GetTick();
             MOD_CUBA_PeriodicTask(&CUBA_Handle);
         }
-        if((HAL_GetTick() - tick3) >= 50)
+        if((HAL_GetTick() - tick3) >= 1233)
         {
             tick3 = HAL_GetTick();
-            HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_1);
+            if(HAL_FDCAN_GetRxFifoFillLevel(&CAN1_struct, FDCAN_RX_FIFO0) != 0)
+            {
+                HAL_FDCAN_GetRxMessage(&CAN1_struct, FDCAN_RX_FIFO0, &RxHeader1, CAN1_rx_message);
+            }
+            HAL_UART_Transmit(&UART_struct, CAN1_rx_message, sizeof(CAN1_rx_message), 1000);
         }
     }
 
@@ -139,6 +144,14 @@ void CAN1_init(void)
     CAN1_struct.Init.NominalTimeSeg1 = 13;
     CAN1_struct.Init.NominalTimeSeg2 = 2;
     (void)HAL_FDCAN_Init(&CAN1_struct);
+
+     /* FDCAN2 Rx Filter init, disable */
+        Filter1_struct.FilterConfig = FDCAN_FILTER_DISABLE;
+        Filter1_struct.IdType = FDCAN_STANDARD_ID;
+        HAL_FDCAN_ConfigFilter(&CAN1_struct, &Filter1_struct);
+    
+        /* FDCAN2 Global Rx filter accepts all non-matching frames in FIFO1 */  
+        HAL_FDCAN_ConfigGlobalFilter(&CAN1_struct, FDCAN_ACCEPT_IN_RX_FIFO0, FDCAN_REJECT, FDCAN_FILTER_REMOTE, FDCAN_REJECT_REMOTE);
 }
 
 void CAN1_Tx(void)
@@ -155,7 +168,7 @@ void CAN1_Tx(void)
 void CAN1_Rx(void)
 {
     RxHeader1.BitRateSwitch = FDCAN_BRS_OFF;
-    RxHeader1.DataLength = FDCAN_DLC_BYTES_4;    //Data frame size of 5 bytes
+    RxHeader1.DataLength = FDCAN_DLC_BYTES_8;    //Data frame size of 5 bytes
     RxHeader1.ErrorStateIndicator = FDCAN_ESI_PASSIVE; 
     RxHeader1.FDFormat = FDCAN_CLASSIC_CAN;   
 }
@@ -169,14 +182,9 @@ void CAN1_transmits(void)
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-    UNUSED(huart);
-    static uint8_t i = 0;
-    uart_rx_buffer[i] = uart_rx_byte;
-    i++;
-    if(uart_rx_buffer[i-1u] == (uint8_t)'\r')
+    if(huart->Instance == USART2)
     {
-        uart_rx_cplt_flag = SET;
-        i = 0;
+        MOD_CUBA_GetUartData(&CUBA_Handle, uart_rx_byte);
     }
     (void)HAL_UART_Receive_IT(&UART_struct, &uart_rx_byte, 1);
 }
@@ -186,6 +194,7 @@ void CUBA_init(void)
     CUBA_Handle.UARTHandler = &UART_struct;
     CUBA_Handle.CANHandler = &CAN2_struct;
     CUBA_Handle.CANRxHeader = &RxHeader2;
+    CUBA_Handle.CANTxHeader = &TxHeader2;
     CUBA_Handle.CANFilterHeader = &Filter2_struct;
     CUBA_Handle.DMAHandler = &hdma_usart2_tx;
     MOD_CUBA_Init(&CUBA_Handle);

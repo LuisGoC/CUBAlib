@@ -2,13 +2,20 @@
 #include "queue.h"
 
 static     void         CUBA_string          ( CUBA_HandleTypeDef *hcuba, CUBA_RxMsgTypeDef *hrxmsg );
+static     HAL_StatusTypeDef cmd_process(uint8_t *cmd);
 static     uint8_t      intToHex             ( uint32_t val, uint8_t* str );
 static     void         integerToString      ( uint32_t value, uint8_t *str );
+static     uint8_t hexStringToIntArray(uint8_t* str, uint8_t* ptr);
 
 static QUEUE_HandleTypeDef fdcan_queue_struct   =   {0};
+static QUEUE_HandleTypeDef uart_queue_struct    =   {0};
 static CUBA_HandleTypeDef  *CUBA_struct         =   NULL;
 static CUBA_RxMsgTypeDef   RxMsgToWrite         =   {0};
 static CUBA_RxMsgTypeDef   RxMsgToRead          =   {0};
+
+static uint8_t uart_cmd_array[30]   =   {0};
+static uint8_t *cmdToken            =   NULL;
+static uint8_t *valueToken          =   NULL;
 
 /**
   * @brief Initializes the CUBA library necessary peripherals.
@@ -125,11 +132,34 @@ HAL_StatusTypeDef MOD_CUBA_Init( CUBA_HandleTypeDef *hcuba )
         hcuba->CANRxHeader->FDFormat = FDCAN_CLASSIC_CAN;
     }
 
+    /* Check FDCAN2 Tx Handle */
+    if(hcuba->CANTxHeader == NULL)
+    {
+        return HAL_ERROR;
+    }
+    else
+    {
+        /* FDCAN2 Tx handle parameters initialization */
+        hcuba->CANTxHeader->DataLength = FDCAN_DLC_BYTES_8;
+        hcuba->CANTxHeader->Identifier = 0x100;
+        hcuba->CANTxHeader->IdType = FDCAN_STANDARD_ID;
+        hcuba->CANTxHeader->FDFormat = FDCAN_CLASSIC_CAN;
+        hcuba->CANTxHeader->TxFrameType = FDCAN_DATA_FRAME;
+        hcuba->CANTxHeader->BitRateSwitch = FDCAN_BRS_OFF;
+        hcuba->CANTxHeader->TxEventFifoControl = FDCAN_NO_TX_EVENTS;
+    }
+
     //FDCAN queue initialization
     fdcan_queue_struct.Buffer = hcuba->RxMsgBuffer;
     fdcan_queue_struct.Elements = 10;
     fdcan_queue_struct.Size = sizeof(CUBA_RxMsgTypeDef);
     HIL_QUEUE_Init(&fdcan_queue_struct);
+
+    //UART queue initialization
+    uart_queue_struct.Buffer = hcuba->uartBuffer;
+    uart_queue_struct.Elements = 116;
+    uart_queue_struct.Size = sizeof(uint8_t);
+    HIL_QUEUE_Init(&uart_queue_struct);
 
     CUBA_struct = hcuba;
 
@@ -148,12 +178,18 @@ HAL_StatusTypeDef MOD_CUBA_Init( CUBA_HandleTypeDef *hcuba )
   **/
  HAL_StatusTypeDef MOD_CUBA_PeriodicTask( CUBA_HandleTypeDef *hcuba )
 {
+    uint8_t pData;
+    uint8_t pIndex;
+
+    pIndex = 0;
+
     /* Check the CUBA handle */
     if(hcuba == NULL)
     {
         return HAL_ERROR;
     }
 
+    /* CAN RECEPTION - UART TRANMISSION*/
     if(HIL_QUEUE_IsEmpty(&fdcan_queue_struct) == 0u)
     {
         if(HIL_QUEUE_Read(&fdcan_queue_struct, &RxMsgToRead) == 1u)
@@ -170,8 +206,40 @@ HAL_StatusTypeDef MOD_CUBA_Init( CUBA_HandleTypeDef *hcuba )
         }
     }
 
+   /* UART RECEPTION - CAN TRANSMISSION */
+    while(HIL_QUEUE_IsEmpty(&uart_queue_struct) == 0u) //If circular buffer isn't empty
+    {
+        
+        (void)HIL_QUEUE_Read(&uart_queue_struct, &pData); 
+    
+        if(pData == (uint8_t)'\r') 
+        {
+            
+            break; 
+        }
+        else
+        {
+            uart_cmd_array[pIndex] = pData; 
+            pIndex++;
+        }    
+    }
+
+    if(cmd_process(uart_cmd_array) == HAL_OK)
+    {
+        memset(hcuba->pTxMsg, 0, sizeof(hcuba->pTxMsg));
+        if(hexStringToIntArray(valueToken, hcuba->pTxMsg) == 0)
+        {
+            (void)HAL_FDCAN_AddMessageToTxFifoQ(hcuba->CANHandler, hcuba->CANTxHeader, hcuba->pTxMsg);
+        }
+    }
+
     
     return HAL_OK;
+}
+
+void MOD_CUBA_GetUartData( CUBA_HandleTypeDef *hcuba, uint8_t data )
+{
+    HIL_QUEUE_Write(&uart_queue_struct, &data);
 }
 
 /**
@@ -251,6 +319,26 @@ static void CUBA_string( CUBA_HandleTypeDef *hcuba, CUBA_RxMsgTypeDef *hrxmsg)
 
 }
 
+static HAL_StatusTypeDef cmd_process(uint8_t *cmd)
+{
+    cmdToken    = (uint8_t*)strtok((char*)cmd, " ");
+    valueToken  = (uint8_t*)strtok(NULL, "\r");
+    
+    if(memcmp(cmdToken, "ATSMCAN", sizeof("ATSMCAN")-1) == 0)
+    {
+        if((strlen((char*)valueToken) > 16) || (strlen((char*)valueToken) == 0))
+        {
+            return HAL_ERROR;
+        }
+    }
+    else
+    {
+        return HAL_ERROR;
+    }
+
+    return HAL_OK;
+}
+
 /**
   * @brief Converts integer values to a HEX string representation in ASCII.
   * @param val   integer value (u32 data element).
@@ -325,6 +413,55 @@ static void integerToString(uint32_t value, uint8_t *str)
         str[0] = '0';
         str[1] = '\0';
     }
+}
+
+static uint8_t hexStringToIntArray(uint8_t* str, uint8_t* ptr)
+{
+    /* Local variables */
+    uint8_t index = 0;   
+    
+    if(str == NULL)
+    {
+        return 1;
+    }
+    if((strlen((char*)str)%2) != 0)
+    {
+        return 1;
+    }
+
+        while(index != strlen((char*)str))
+        {
+            if((str[index] > 47) && (str[index] < 58))
+            {
+                if(index%2 == 0)
+                {
+                    ptr[index/2] = (str[index] - 48) << 4;
+                }
+                else
+                {
+                    ptr[index/2] |= (str[index] - 48);
+                }
+            }
+            else if((str[index] > 64) && (str[index] < 71))
+            {
+                if(index%2 == 0)
+                {
+                    ptr[index/2] = (str[index] - 55) << 4;
+                }
+                else
+                {
+                    ptr[index/2] |= (str[index] - 55);
+                }
+            }
+            else
+            {
+                return 1;
+            }
+            index++;
+        }
+    
+
+    return 0;
 }
 
 void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo1ITs)

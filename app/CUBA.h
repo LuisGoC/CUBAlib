@@ -33,11 +33,14 @@
         DMA_HandleTypeDef       *DMAHandler;            //pointer to DMA_HandleTypeDef structure CUBA library shall use
         uint8_t                 CUBA_buffer[100];       //Buffer of 100 elements to store CUBA analyzed data
         uint8_t                 pRxMsg[8];              //Buffer of 8 elements to store Rx FDCAN2 Msg 
+        uint8_t                 pTxMsg[8];
         CUBA_RxMsgTypeDef       RxMsgBuffer[10];
+        uint8_t                 uartBuffer[116];
     }CUBA_HandleTypeDef;
 
     /* CUBA Prototype Functions */
     HAL_StatusTypeDef MOD_CUBA_Init         ( CUBA_HandleTypeDef *hcuba );
     HAL_StatusTypeDef MOD_CUBA_PeriodicTask ( CUBA_HandleTypeDef *hcuba );
+    void MOD_CUBA_GetUartData( CUBA_HandleTypeDef *hcuba, uint8_t data );
 
 #endif
