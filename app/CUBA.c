@@ -141,7 +141,7 @@ HAL_StatusTypeDef MOD_CUBA_Init( CUBA_HandleTypeDef *hcuba )
     {
         /* FDCAN2 Tx handle parameters initialization */
         hcuba->CANTxHeader->DataLength = FDCAN_DLC_BYTES_8;
-        hcuba->CANTxHeader->Identifier = 0x100;
+        hcuba->CANTxHeader->Identifier = 0x0FF;
         hcuba->CANTxHeader->IdType = FDCAN_STANDARD_ID;
         hcuba->CANTxHeader->FDFormat = FDCAN_CLASSIC_CAN;
         hcuba->CANTxHeader->TxFrameType = FDCAN_DATA_FRAME;
@@ -160,6 +160,8 @@ HAL_StatusTypeDef MOD_CUBA_Init( CUBA_HandleTypeDef *hcuba )
     uart_queue_struct.Elements = 116;
     uart_queue_struct.Size = sizeof(uint8_t);
     HIL_QUEUE_Init(&uart_queue_struct);
+
+    hcuba->uartCpltFlag = SET;
 
     CUBA_struct = hcuba;
 
@@ -189,32 +191,22 @@ HAL_StatusTypeDef MOD_CUBA_Init( CUBA_HandleTypeDef *hcuba )
         return HAL_ERROR;
     }
 
-    /* CAN RECEPTION - UART TRANMISSION*/
-    if(HIL_QUEUE_IsEmpty(&fdcan_queue_struct) == 0u)
-    {
-        if(HIL_QUEUE_Read(&fdcan_queue_struct, &RxMsgToRead) == 1u)
-        {
-            /* create character string with Rx FDCAN message data */ 
-            CUBA_string(hcuba, &RxMsgToRead);
-
-            /* DMA UART Transmit of Rx FDCAN analyzed data */
-            HAL_UART_Transmit_DMA(hcuba->UARTHandler, hcuba->CUBA_buffer, STRING_LENGTH);
-        }
-        else
-        {
-            return HAL_ERROR;
-        }
-    }
-
-   /* UART RECEPTION - CAN TRANSMISSION */
+    /* UART RECEPTION - CAN TRANSMISSION */
     while(HIL_QUEUE_IsEmpty(&uart_queue_struct) == 0u) //If circular buffer isn't empty
     {
-        
+        //desactivar interrupcion
         (void)HIL_QUEUE_Read(&uart_queue_struct, &pData); 
-    
+        //habilitar interrupcion
         if(pData == (uint8_t)'\r') 
         {
-            
+            if(cmd_process(uart_cmd_array) == HAL_OK)
+            {
+                memset(hcuba->pTxMsg, 0, sizeof(hcuba->pTxMsg));
+                if(hexStringToIntArray(valueToken, hcuba->pTxMsg) == 0)
+                {
+                    (void)HAL_FDCAN_AddMessageToTxFifoQ(hcuba->CANHandler, hcuba->CANTxHeader, hcuba->pTxMsg);
+                }
+            }
             break; 
         }
         else
@@ -224,22 +216,41 @@ HAL_StatusTypeDef MOD_CUBA_Init( CUBA_HandleTypeDef *hcuba )
         }    
     }
 
-    if(cmd_process(uart_cmd_array) == HAL_OK)
+    /* CAN RECEPTION - UART TRANMISSION*/
+    if((HIL_QUEUE_IsEmpty(&fdcan_queue_struct) == 0u) && hcuba->uartCpltFlag == SET)
     {
-        memset(hcuba->pTxMsg, 0, sizeof(hcuba->pTxMsg));
-        if(hexStringToIntArray(valueToken, hcuba->pTxMsg) == 0)
+        if(HIL_QUEUE_Read(&fdcan_queue_struct, &RxMsgToRead) == 1u)
         {
-            (void)HAL_FDCAN_AddMessageToTxFifoQ(hcuba->CANHandler, hcuba->CANTxHeader, hcuba->pTxMsg);
+            /* create character string with Rx FDCAN message data */ 
+            CUBA_string(hcuba, &RxMsgToRead);
+
+            /* DMA UART Transmit of Rx FDCAN analyzed data */
+            HAL_UART_Transmit_DMA(hcuba->UARTHandler, hcuba->CUBA_buffer, STRING_LENGTH);
+            hcuba->uartCpltFlag = RESET;
+        }
+        else
+        {
+            return HAL_ERROR;
         }
     }
-
     
     return HAL_OK;
 }
 
-void MOD_CUBA_GetUartData( CUBA_HandleTypeDef *hcuba, uint8_t data )
+void MOD_CUBA_GetUartData( UART_HandleTypeDef *huart, uint8_t data )
 {
-    HIL_QUEUE_Write(&uart_queue_struct, &data);
+    if(huart->Instance == USART2)
+    {
+        HIL_QUEUE_Write(&uart_queue_struct, &data);
+    }
+}
+
+void MOD_CUBA_GetUartTxCpltFlag( UART_HandleTypeDef *huart )
+{
+    if(huart->Instance == USART2)
+    {
+        CUBA_struct->uartCpltFlag = SET;
+    }
 }
 
 /**
@@ -480,15 +491,13 @@ void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo1ITs)
         {
             memcpy(&RxMsgToWrite.RxHeaderMsg, CUBA_struct->CANRxHeader, sizeof(RxMsgToWrite.RxHeaderMsg));
             memcpy(&RxMsgToWrite.RxDataMsg, CUBA_struct->pRxMsg, sizeof(RxMsgToWrite.RxDataMsg));
-            HIL_QUEUE_Write(&fdcan_queue_struct, &RxMsgToWrite);
+            if(HIL_QUEUE_Write(&fdcan_queue_struct, &RxMsgToWrite) == 0u)
+            {
+                HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, SET);
+            }
         }   
     }
     
-}
-
-void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
-{
-
 }
 
 

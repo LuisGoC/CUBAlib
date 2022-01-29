@@ -36,11 +36,13 @@
         uint8_t                 pTxMsg[8];
         CUBA_RxMsgTypeDef       RxMsgBuffer[10];
         uint8_t                 uartBuffer[116];
+        uint8_t                 uartCpltFlag;
     }CUBA_HandleTypeDef;
 
     /* CUBA Prototype Functions */
     HAL_StatusTypeDef MOD_CUBA_Init         ( CUBA_HandleTypeDef *hcuba );
     HAL_StatusTypeDef MOD_CUBA_PeriodicTask ( CUBA_HandleTypeDef *hcuba );
-    void MOD_CUBA_GetUartData( CUBA_HandleTypeDef *hcuba, uint8_t data );
+    void MOD_CUBA_GetUartData( UART_HandleTypeDef *huart, uint8_t data );
+    void MOD_CUBA_GetUartTxCpltFlag( UART_HandleTypeDef *huart );
 
 #endif

@@ -29,19 +29,14 @@ FDCAN_TxHeaderTypeDef TxHeader2; //Data structure with transmission message sett
 FDCAN_RxHeaderTypeDef RxHeader2; //Data structure with reception message settings
 FDCAN_FilterTypeDef Filter2_struct;
 DMA_HandleTypeDef hdma_usart2_tx;
-uint8_t msgBuffer[8];
-
 
 CUBA_HandleTypeDef CUBA_Handle;
 
 /* Global variables */
 uint8_t CAN1_tx_message[8] = {'R', 'E', 'C', 'E', 'I', 'V', 'E', 'D'};
 uint8_t CAN1_rx_message[10] = {0};
-uint8_t CAN2_rx_message[10] = {0};
 uint8_t uart_rx_byte;
-uint8_t uart_rx_buffer[10] = {0};
 uint8_t TxIndex;
-uint8_t *tok[2] = {0};
 
 __IO uint8_t uart_rx_cplt_flag = RESET;
 
@@ -49,7 +44,6 @@ int main( void )
 {
     uint32_t tick1 = 0;
     uint32_t tick2 = 0;
-    uint32_t tick3 = 0;
 
     HAL_Init();
     GPIO_init();
@@ -60,30 +54,20 @@ int main( void )
 
     tick1 = HAL_GetTick();
     tick2 = HAL_GetTick();
-    tick3 = HAL_GetTick();
 
     (void)HAL_FDCAN_Start(&CAN1_struct); //FDCAN1 leaves initialization mode and starts normal mode
     (void)HAL_UART_Receive_IT(&UART_struct, &uart_rx_byte, 1);
     for( ; ; )
     {
-        if((HAL_GetTick() - tick1) >= 30000)
+        if((HAL_GetTick() - tick1) >= 1)
         {
             tick1 = HAL_GetTick();
             CAN1_transmits();
         }
-        if((HAL_GetTick() - tick2) >= 1000)
+        if((HAL_GetTick() - tick2) >= 7)
         {
             tick2 = HAL_GetTick();
             MOD_CUBA_PeriodicTask(&CUBA_Handle);
-        }
-        if((HAL_GetTick() - tick3) >= 1233)
-        {
-            tick3 = HAL_GetTick();
-            if(HAL_FDCAN_GetRxFifoFillLevel(&CAN1_struct, FDCAN_RX_FIFO0) != 0)
-            {
-                HAL_FDCAN_GetRxMessage(&CAN1_struct, FDCAN_RX_FIFO0, &RxHeader1, CAN1_rx_message);
-            }
-            HAL_UART_Transmit(&UART_struct, CAN1_rx_message, sizeof(CAN1_rx_message), 1000);
         }
     }
 
@@ -109,6 +93,7 @@ void GPIO_init(void)
     GPIO_InitStruct.Pin   = GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_2;
     HAL_GPIO_Init( GPIOC, &GPIO_InitStruct );
     HAL_GPIO_WritePin(GPIOC, (GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_2), RESET);
+     HAL_GPIO_WritePin(GPIOA, (GPIO_PIN_5 | GPIO_PIN_6), RESET);
 }
 
 void UART_init(void)
@@ -144,14 +129,6 @@ void CAN1_init(void)
     CAN1_struct.Init.NominalTimeSeg1 = 13;
     CAN1_struct.Init.NominalTimeSeg2 = 2;
     (void)HAL_FDCAN_Init(&CAN1_struct);
-
-     /* FDCAN2 Rx Filter init, disable */
-        Filter1_struct.FilterConfig = FDCAN_FILTER_DISABLE;
-        Filter1_struct.IdType = FDCAN_STANDARD_ID;
-        HAL_FDCAN_ConfigFilter(&CAN1_struct, &Filter1_struct);
-    
-        /* FDCAN2 Global Rx filter accepts all non-matching frames in FIFO1 */  
-        HAL_FDCAN_ConfigGlobalFilter(&CAN1_struct, FDCAN_ACCEPT_IN_RX_FIFO0, FDCAN_REJECT, FDCAN_FILTER_REMOTE, FDCAN_REJECT_REMOTE);
 }
 
 void CAN1_Tx(void)
@@ -182,11 +159,14 @@ void CAN1_transmits(void)
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-    if(huart->Instance == USART2)
-    {
-        MOD_CUBA_GetUartData(&CUBA_Handle, uart_rx_byte);
-    }
+    
+    MOD_CUBA_GetUartData(huart, uart_rx_byte);  
     (void)HAL_UART_Receive_IT(&UART_struct, &uart_rx_byte, 1);
+}
+
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
+{
+    MOD_CUBA_GetUartTxCpltFlag( huart );
 }
 
 void CUBA_init(void)
