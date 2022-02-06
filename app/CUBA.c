@@ -5,7 +5,7 @@ static     void         CUBA_string          ( CUBA_HandleTypeDef *hcuba, CUBA_R
 static     HAL_StatusTypeDef cmd_process(uint8_t *cmd);
 static     uint8_t      intToHex             ( uint32_t val, uint8_t* str );
 static     void         integerToString      ( uint32_t value, uint8_t *str );
-static     uint8_t hexStringToIntArray(uint8_t* str, uint8_t* ptr);
+static     uint64_t     hexToInt             (uint8_t* str);
 
 static QUEUE_HandleTypeDef fdcan_queue_struct   =   {0};
 static QUEUE_HandleTypeDef uart_queue_struct    =   {0};
@@ -15,6 +15,7 @@ static CUBA_RxMsgTypeDef   RxMsgToRead          =   {0};
 
 static uint8_t uart_cmd_array[30]   =   {0};
 static uint8_t *cmdToken            =   NULL;
+static uint8_t *idToken             =   NULL;
 static uint8_t *valueToken          =   NULL;
 
 /**
@@ -201,11 +202,11 @@ HAL_StatusTypeDef MOD_CUBA_Init( CUBA_HandleTypeDef *hcuba )
         {
             if(cmd_process(uart_cmd_array) == HAL_OK)
             {
-                memset(hcuba->pTxMsg, 0, sizeof(hcuba->pTxMsg));
-                if(hexStringToIntArray(valueToken, hcuba->pTxMsg) == 0)
-                {
-                    (void)HAL_FDCAN_AddMessageToTxFifoQ(hcuba->CANHandler, hcuba->CANTxHeader, hcuba->pTxMsg);
-                }
+                (void)HAL_FDCAN_AddMessageToTxFifoQ(hcuba->CANHandler, hcuba->CANTxHeader, hcuba->pTxMsg);   
+            }
+            else
+            {
+                //transmit error
             }
             break; 
         }
@@ -332,9 +333,13 @@ static void CUBA_string( CUBA_HandleTypeDef *hcuba, CUBA_RxMsgTypeDef *hrxmsg)
 
 static HAL_StatusTypeDef cmd_process(uint8_t *cmd)
 {
-    cmdToken    = (uint8_t*)strtok((char*)cmd, " ");
+    uint16_t pID    = 0;
+    uint64_t pValue = 0;
+
+    cmdToken    = (uint8_t*)strtok((char*)cmd, "=");
+    idToken     = (uint8_t*)strtok(NULL, ",");
     valueToken  = (uint8_t*)strtok(NULL, "\r");
-    
+
     if(memcmp(cmdToken, "ATSMCAN", sizeof("ATSMCAN")-1) == 0)
     {
         if((strlen((char*)valueToken) > 16) || (strlen((char*)valueToken) == 0))
@@ -345,6 +350,24 @@ static HAL_StatusTypeDef cmd_process(uint8_t *cmd)
     else
     {
         return HAL_ERROR;
+    }
+
+    pValue  = hexToInt(valueToken);
+    pID     = hexToInt(idToken);
+
+    for(uint8_t i = 8; i > 0; i--)
+    {
+        CUBA_struct->pTxMsg[i-1] = (uint8_t)(pValue&0xFFULL);
+        pValue >>= 8ULL;
+    }
+
+    if(pID > 2047)
+    {
+        return HAL_ERROR;
+    }
+    else
+    {
+        CUBA_struct->CANTxHeader->Identifier = pID;
     }
 
     return HAL_OK;
@@ -426,53 +449,38 @@ static void integerToString(uint32_t value, uint8_t *str)
     }
 }
 
-static uint8_t hexStringToIntArray(uint8_t* str, uint8_t* ptr)
+static uint64_t hexToInt(uint8_t* str)
 {
-    /* Local variables */
-    uint8_t index = 0;   
+    uint64_t decimal = 0, base = 1;
+    uint8_t length;
+    int8_t i = 0;
     
     if(str == NULL)
     {
-        return 1;
-    }
-    if((strlen((char*)str)%2) != 0)
-    {
-        return 1;
+        return 0;
     }
 
-        while(index != strlen((char*)str))
-        {
-            if((str[index] > 47) && (str[index] < 58))
-            {
-                if(index%2 == 0)
-                {
-                    ptr[index/2] = (str[index] - 48) << 4;
-                }
-                else
-                {
-                    ptr[index/2] |= (str[index] - 48);
-                }
-            }
-            else if((str[index] > 64) && (str[index] < 71))
-            {
-                if(index%2 == 0)
-                {
-                    ptr[index/2] = (str[index] - 55) << 4;
-                }
-                else
-                {
-                    ptr[index/2] |= (str[index] - 55);
-                }
-            }
-            else
-            {
-                return 1;
-            }
-            index++;
-        }
+    length = strlen((char*)str);
     
-
-    return 0;
+    for(i = length-1; i >= 0; i--)
+    {
+        if(str[i] >= '0' && str[i] <= '9')
+        {
+            decimal += (str[i] - 48) * base;
+            base *= 16;
+        }
+        else if(str[i] >= 'A' && str[i] <= 'F')
+        {
+            decimal += (str[i] - 55) * base;
+            base *= 16;
+        }
+        else if(str[i] >= 'a' && str[i] <= 'f')
+        {
+            decimal += (str[i] - 87) * base;
+            base *= 16;
+        }
+    }
+    return decimal;
 }
 
 void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo1ITs)

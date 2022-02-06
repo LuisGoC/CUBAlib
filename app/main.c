@@ -59,7 +59,7 @@ int main( void )
     (void)HAL_UART_Receive_IT(&UART_struct, &uart_rx_byte, 1);
     for( ; ; )
     {
-        if((HAL_GetTick() - tick1) >= 1)
+        if((HAL_GetTick() - tick1) >= 100)
         {
             tick1 = HAL_GetTick();
             CAN1_transmits();
