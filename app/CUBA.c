@@ -1,11 +1,15 @@
 #include "CUBA.h"
+#include "queue.h"
 
-static     void      CUBA_string       ( CUBA_HandleTypeDef *hcuba);
-static     uint8_t   intToHex          ( uint32_t val, uint8_t* str);
-static     void      integerToString   ( uint32_t value, uint8_t *str);
-static     uint64_t  hexToInt          (uint8_t* str);
+static     void              CUBA_string          ( CUBA_HandleTypeDef *hcuba, CUBA_RxMsgTypeDef *hrxmsg );
+static     HAL_StatusTypeDef cmd_process          (uint8_t *cmd);
+static     uint8_t           intToHex             ( uint32_t val, uint8_t* str );
+static     void              integerToString      ( uint32_t value, uint8_t *str );
+static     uint64_t          hexToInt             (uint8_t* str);
 
-static CUBA_HandleTypeDef *CUBA_struct;
+static QUEUE_HandleTypeDef fdcan_queue_struct   =   {0};
+static QUEUE_HandleTypeDef uart_queue_struct    =   {0};
+static CUBA_HandleTypeDef  *CUBA_struct         =   NULL;
 
 /**
   * @brief Initializes the CUBA library necessary peripherals.
@@ -18,14 +22,16 @@ HAL_StatusTypeDef MOD_CUBA_Init( CUBA_HandleTypeDef *hcuba )
     /* Check the CUBA handle */
     if(hcuba == NULL)
     {
-        return HAL_ERROR;
+        return HAL_ERROR; 
     }
     
-    /* check the USART instance equals USART2 and 115200 baudrate */
-    if(hcuba->UARTHandler->Instance != USART2 || hcuba->UARTHandler->Init.BaudRate != 115200)
+    /* check the USART instance equals USART2 */
+    if(hcuba->UARTHandler->Instance != USART2)
     {
-        return HAL_ERROR;
+        return HAL_ERROR;  
     }
+
+    (void)memset(hcuba->CUBA_buffer, 0, sizeof(hcuba->CUBA_buffer));
 
     /* DMA peripheral clock enable */
     __HAL_RCC_DMA1_CLK_ENABLE();
@@ -57,14 +63,14 @@ HAL_StatusTypeDef MOD_CUBA_Init( CUBA_HandleTypeDef *hcuba )
     /* check the FDCAN handle */
     if(hcuba->CANHandler == NULL)
     {
-        return HAL_ERROR;
+        return HAL_ERROR;  
     }
     else
     {
         /* FDCAN2 Init */
         hcuba->CANHandler->Instance                     =   FDCAN2;
         hcuba->CANHandler->Init.Mode                    =   FDCAN_MODE_NORMAL;
-        hcuba->CANHandler->Init.AutoRetransmission      =   ENABLE;
+        hcuba->CANHandler->Init.AutoRetransmission      =   DISABLE;
         hcuba->CANHandler->Init.ClockDivider            =   FDCAN_CLOCK_DIV1;
         hcuba->CANHandler->Init.TxFifoQueueMode         =   FDCAN_TX_FIFO_OPERATION;
         hcuba->CANHandler->Init.TransmitPause           =   DISABLE;
@@ -77,6 +83,9 @@ HAL_StatusTypeDef MOD_CUBA_Init( CUBA_HandleTypeDef *hcuba )
         hcuba->CANHandler->Init.NominalTimeSeg1         =   13;
         hcuba->CANHandler->Init.NominalTimeSeg2         =   2;
         HAL_FDCAN_Init(hcuba->CANHandler);
+
+        /* Init the low level hardware: CLOCK, GPIO */ 
+        HAL_CUBA_MspInit(hcuba);
         
         /* FDCAN interrupt init */
         /* TIM17_FDCAN_IT1_IRQn interrupt configuration */
@@ -87,7 +96,7 @@ HAL_StatusTypeDef MOD_CUBA_Init( CUBA_HandleTypeDef *hcuba )
     /* Check FDCAN2 Filter Handle */
     if(hcuba->CANFilterHeader == NULL)
     {
-        return HAL_ERROR;
+        return HAL_ERROR;  
     }
     else
     {
@@ -109,7 +118,7 @@ HAL_StatusTypeDef MOD_CUBA_Init( CUBA_HandleTypeDef *hcuba )
     /* Check FDCAN2 Rx Handle */
     if(hcuba->CANRxHeader == NULL)
     {
-        return HAL_ERROR;
+        return HAL_ERROR;  
     }
     else
     {
@@ -120,21 +129,58 @@ HAL_StatusTypeDef MOD_CUBA_Init( CUBA_HandleTypeDef *hcuba )
         hcuba->CANRxHeader->FDFormat = FDCAN_CLASSIC_CAN;
     }
 
-    hcuba->CANTxHeader->DataLength = FDCAN_DLC_BYTES_8; //Data frame size of 8 bytes
-    hcuba->CANTxHeader->Identifier = 0x0FF;             // 11 bit identifier  (Lower value, higher priority)
-    hcuba->CANTxHeader->IdType = FDCAN_STANDARD_ID;     // standar Id (11 bits)
-    hcuba->CANTxHeader->FDFormat = FDCAN_CLASSIC_CAN;   
-    hcuba->CANTxHeader->TxFrameType = FDCAN_DATA_FRAME; //DATA FRAME (It also can be remote frame RTR = 1)
-    hcuba->CANTxHeader->BitRateSwitch = FDCAN_BRS_OFF;  
-    hcuba->CANTxHeader->TxEventFifoControl = FDCAN_NO_TX_EVENTS; 
+    /* Check FDCAN2 Tx Handle */
+    if(hcuba->CANTxHeader == NULL)
+    {
+        return HAL_ERROR;   
+    }
+    else
+    {
+        /* FDCAN2 Tx handle parameters initialization */
+        hcuba->CANTxHeader->DataLength = FDCAN_DLC_BYTES_8;
+        hcuba->CANTxHeader->Identifier = 0x0FF;
+        hcuba->CANTxHeader->IdType = FDCAN_STANDARD_ID;
+        hcuba->CANTxHeader->FDFormat = FDCAN_CLASSIC_CAN;
+        hcuba->CANTxHeader->TxFrameType = FDCAN_DATA_FRAME;
+        hcuba->CANTxHeader->BitRateSwitch = FDCAN_BRS_OFF;
+        hcuba->CANTxHeader->TxEventFifoControl = FDCAN_NO_TX_EVENTS;
+    }
 
-    hcuba->pRxFlag = 0;
+    //FDCAN queue initialization
+    fdcan_queue_struct.Buffer = hcuba->RxMsgBuffer;
+    fdcan_queue_struct.Elements = 10;
+    fdcan_queue_struct.Size = sizeof(CUBA_RxMsgTypeDef);
+    HIL_QUEUE_Init(&fdcan_queue_struct);
 
-    memset(hcuba->pTxMsg, 0, sizeof(hcuba->pTxMsg));
+    //UART queue initialization
+    uart_queue_struct.Buffer = hcuba->uartBuffer;
+    uart_queue_struct.Elements = 116;
+    uart_queue_struct.Size = sizeof(uint8_t);
+    HIL_QUEUE_Init(&uart_queue_struct);
+
+    hcuba->uartCpltFlag = SET;
 
     CUBA_struct = hcuba;
 
+    /* FDCAN2 Start */
+    HAL_FDCAN_Start(hcuba->CANHandler);
+
     return HAL_OK;
+}
+
+/**
+  * @brief Initialize the CUBA MSP.
+  * @param huart UART handle.
+  * @retval None
+  */
+__weak void HAL_CUBA_MspInit(CUBA_HandleTypeDef *hcuba)
+{
+  /* Prevent unused argument(s) compilation warning */
+  UNUSED(hcuba);
+
+  /* NOTE : This function should not be modified, when the callback is needed,
+            the HAL_UART_MspInit can be implemented in the user file
+   */
 }
 
 /**
@@ -144,38 +190,97 @@ HAL_StatusTypeDef MOD_CUBA_Init( CUBA_HandleTypeDef *hcuba )
   *              the configuration information for the CUBA library
   * @retval HAL Status
   **/
- HAL_StatusTypeDef MOD_CUBA_Start( CUBA_HandleTypeDef *hcuba )
+ HAL_StatusTypeDef MOD_CUBA_PeriodicTask( CUBA_HandleTypeDef *hcuba )
 {
+    CUBA_RxMsgTypeDef RxMsgToRead = {0};
+    uint8_t uart_cmd_array[30] = {0};
+    uint8_t pData;
+    uint8_t pIndex;
+
+    pIndex = 0;
+
     /* Check the CUBA handle */
     if(hcuba == NULL)
     {
-        return HAL_ERROR;
+        return HAL_ERROR;  
     }
 
-    /* FDCAN2 Start */
-    HAL_FDCAN_Start(hcuba->CANHandler);
+    /* UART RECEPTION - CAN TRANSMISSION */
+    while(HIL_QUEUE_IsEmpty(&uart_queue_struct) == 0u) //If circular buffer isn't empty
+    {
+        //desactivar interrupcion
+        (void)HIL_QUEUE_Read(&uart_queue_struct, &pData); 
+        //habilitar interrupcion
+        if(pData == (uint8_t)'\r') 
+        {
+            if(cmd_process(uart_cmd_array) == HAL_OK)
+            {
+                (void)HAL_FDCAN_AddMessageToTxFifoQ(hcuba->CANHandler, hcuba->CANTxHeader, hcuba->pTxMsg);   
+            }
+            else
+            {
+                //transmit error
+                return HAL_ERROR;   
+            }
+            break; 
+        }
+        else
+        {
+            uart_cmd_array[pIndex] = pData; 
+            pIndex++;
+        }    
+    }
 
+    /* CAN RECEPTION - UART TRANMISSION*/
+    if((HIL_QUEUE_IsEmpty(&fdcan_queue_struct) == 0u) && (hcuba->uartCpltFlag == SET))
+    {
+        if(HIL_QUEUE_Read(&fdcan_queue_struct, &RxMsgToRead) == 1u)
+        {
+            /* create character string with Rx FDCAN message data */ 
+            CUBA_string(hcuba, &RxMsgToRead);
+
+            /* DMA UART Transmit of Rx FDCAN analyzed data */
+            HAL_UART_Transmit_DMA(hcuba->UARTHandler, hcuba->CUBA_buffer, STRING_LENGTH);
+            hcuba->uartCpltFlag = RESET;
+        }
+        else
+        {
+            return HAL_ERROR;   
+        }
+    }
+    
     return HAL_OK;
 }
 
-HAL_StatusTypeDef MOD_CUBA_GetData( CUBA_HandleTypeDef *hcuba, uint8_t data)
+/**
+  * @brief This function will let the CUBA library store the data received by the UART in a queue 
+  *         to avoid the loss of information until the execution of the periodic task function.
+            Use this function in the UART Rx Transfer completed callback. HAL_UART_RxCpltCallback.
+  * @param huart pointer to a UART_HandleTypeDef structure that contains 
+  *              the configuration information for the specified UART.
+  * @retval none
+  **/
+void MOD_CUBA_GetUartData( UART_HandleTypeDef *huart, uint8_t data )
 {
-    static uint8_t i = 0;
-    uint64_t value;
-
-    if(data != '\r')
+    if(huart->Instance == USART2)
     {
-        hcuba->pTxMsg[i] = data;
-        i++;
+        (void)HIL_QUEUE_Write(&uart_queue_struct, &data);
     }
-    else
-    {
-        i = 0;
-        value = hexToInt(hcuba->pTxMsg);
-        HAL_FDCAN_AddMessageToTxFifoQ(hcuba->CANHandler, hcuba->CANTxHeader, (uint8_t*)&value);
-    }
+}
 
-    return HAL_OK;
+/**
+  * @brief This function will let the CUBA library know when it has finished transmitting data over the UART using DMA.
+            Use this function in the UART Tx Transfer completed callback. HAL_UART_TxCpltCallback.
+  * @param huart pointer to a UART_HandleTypeDef structure that contains 
+  *              the configuration information for the specified UART.
+  * @retval none
+  **/
+void MOD_CUBA_GetUartTxCpltFlag( UART_HandleTypeDef *huart )
+{
+    if(huart->Instance == USART2)
+    {
+        CUBA_struct->uartCpltFlag = SET;
+    }
 }
 
 /**
@@ -186,86 +291,118 @@ HAL_StatusTypeDef MOD_CUBA_GetData( CUBA_HandleTypeDef *hcuba, uint8_t data)
   * @param str   Pointer to data buffer (u8 data elements).
   * @retval none
   **/
-static void CUBA_string( CUBA_HandleTypeDef *hcuba)
+static void CUBA_string( CUBA_HandleTypeDef *hcuba, CUBA_RxMsgTypeDef *hrxmsg)
 {
     char word[10] = {0};
 
-    memset(hcuba->CUBA_buffer, 0, sizeof(hcuba->CUBA_buffer));
+    (void)memset(hcuba->CUBA_buffer, 0, sizeof(hcuba->CUBA_buffer));
     
     /* Get identifier of Rx FDCAN2 msg and convert it to hex string */
-    intToHex(hcuba->CANRxHeader->Identifier, (uint8_t*)word);
-    strcat((char*)hcuba->CUBA_buffer, word+4);
-    strcat((char*)hcuba->CUBA_buffer, S_DSPACE);
+    (void)intToHex(hrxmsg->RxHeaderMsg.Identifier, (uint8_t*)word);
+    (void)strcat((char*)hcuba->CUBA_buffer, &word[4]);
+    (void)strcat((char*)hcuba->CUBA_buffer, S_DSPACE);
 
     /* IdType equals FDCAN_STANDARD_ID */
-    if(hcuba->CANRxHeader->IdType == FDCAN_STANDARD_ID)
+    if(hrxmsg->RxHeaderMsg.IdType == FDCAN_STANDARD_ID)
     {
-        strcat((char*)hcuba->CUBA_buffer, S_SDCAN);
-        strcat((char*)hcuba->CUBA_buffer, S_DSPACE);
+        (void)strcat((char*)hcuba->CUBA_buffer, S_SDCAN);
+        (void)strcat((char*)hcuba->CUBA_buffer, S_DSPACE);
     }
     else   /* FDCAN_EXTENDED_ID */
     {
-        strcat((char*)hcuba->CUBA_buffer, S_FDCAN);
-        strcat((char*)hcuba->CUBA_buffer, S_DSPACE);
+        (void)strcat((char*)hcuba->CUBA_buffer, S_FDCAN);
+        (void)strcat((char*)hcuba->CUBA_buffer, S_DSPACE);
     }
 
     /* Get DLC of Rx FDCAN2 msg and convert it to string */
-    integerToString(hcuba->CANRxHeader->DataLength >> 16, (uint8_t*)word);
-    strcat((char*)hcuba->CUBA_buffer, word);
-    strcat((char*)hcuba->CUBA_buffer, S_DSPACE);
-
-    /* Rx Msg */
-    if(hcuba->pRxFlag == 1)
-    {
-        hcuba->pRxFlag = 0;
-        strcat((char*)hcuba->CUBA_buffer, S_RX);
-        strcat((char*)hcuba->CUBA_buffer, S_DSPACE);
-    }
-    else /* Tx Msg */
-    {
-        strcat((char*)hcuba->CUBA_buffer, S_TX);
-        strcat((char*)hcuba->CUBA_buffer, S_DSPACE);
-    }
+    (void)integerToString(hrxmsg->RxHeaderMsg.DataLength >> 16, (uint8_t*)word);
+    (void)strcat((char*)hcuba->CUBA_buffer, word);
+    (void)strcat((char*)hcuba->CUBA_buffer, S_DSPACE);
 
     /* RxFrameType equals FDCAN_DATA_FRAME */
-    if(hcuba->CANRxHeader->RxFrameType == FDCAN_DATA_FRAME)
+    if(hrxmsg->RxHeaderMsg.RxFrameType == FDCAN_DATA_FRAME)
     {
-        strcat((char*)hcuba->CUBA_buffer, S_DATA);
-        strcat((char*)hcuba->CUBA_buffer, S_DSPACE);
+        (void)strcat((char*)hcuba->CUBA_buffer, S_DATA);
+        (void)strcat((char*)hcuba->CUBA_buffer, S_DSPACE);
     }
     else  /* RxFrameType equals FDCAN_REMOTE_FRAME */
     {
-        strcat((char*)hcuba->CUBA_buffer, S_REMOTE);
-        strcat((char*)hcuba->CUBA_buffer, S_DSPACE);
+        (void)strcat((char*)hcuba->CUBA_buffer, S_REMOTE);
+        (void)strcat((char*)hcuba->CUBA_buffer, S_DSPACE);
     }
 
     /* Data Payload */
-    for(uint8_t i = 0; i < (hcuba->CANRxHeader->DataLength >> 16); i++)
+    for(uint8_t i = 0; i < (hrxmsg->RxHeaderMsg.DataLength >> 16); i++)
     {
-        intToHex(hcuba->pRxMsg[i], (uint8_t*)word);
-        strcat((char*)hcuba->CUBA_buffer, word+6);
-        strcat((char*)hcuba->CUBA_buffer, S_DSPACE);
+        (void)intToHex(hrxmsg->RxDataMsg[i], (uint8_t*)word);
+        (void)strcat((char*)hcuba->CUBA_buffer, &word[6]);
+        (void)strcat((char*)hcuba->CUBA_buffer, S_DSPACE);
     }
 
     /* Data in ASCII */
-    for(uint8_t i = 0; i < (hcuba->CANRxHeader->DataLength >> 16); i++)
+    for(uint8_t i = 0; i < (hrxmsg->RxHeaderMsg.DataLength >> 16); i++)
     {
         char data[2] = {0};
         /* ASCII data */
-        if((hcuba->pRxMsg[i] >= 32) && (hcuba->pRxMsg[i] <= 126)) 
+        if((hrxmsg->RxDataMsg[i] >= 32u) && (hrxmsg->RxDataMsg[i] <= 126u)) 
         {
-            data[0] = hcuba->pRxMsg[i];
-            strcat((char*)hcuba->CUBA_buffer, data);
+            data[0] = hrxmsg->RxDataMsg[i];
+            (void)strcat((char*)hcuba->CUBA_buffer, data);
         }
         else /* No ASCII data */
         {
-            strcat((char*)hcuba->CUBA_buffer, ".");
+            (void)strcat((char*)hcuba->CUBA_buffer, ".");
         }
     }
 
     /* end of string */
-    strcat((char*)hcuba->CUBA_buffer, "\n");
+    (void)strcat((char*)hcuba->CUBA_buffer, "\n");
 
+}
+
+static HAL_StatusTypeDef cmd_process(uint8_t *cmd)
+{
+    uint16_t pID    = 0;
+    uint64_t pValue = 0;
+    uint8_t *cmdToken   = NULL;
+    uint8_t *idToken    = NULL;
+    uint8_t *valueToken = NULL;
+
+    cmdToken    = (uint8_t*)strtok((char*)cmd, "=");
+    idToken     = (uint8_t*)strtok(NULL, ",");
+    valueToken  = (uint8_t*)strtok(NULL, "\r");
+
+    if(strcmp((char *)cmdToken, "ATSMCAN") == 0)
+    {
+        if(((int)strlen((char*)valueToken) > 16) || ((int)strlen((char*)valueToken) == 0))
+        {
+            return HAL_ERROR;  
+        }
+    }
+    else
+    {
+        return HAL_ERROR;  
+    }
+
+    pValue  = hexToInt(valueToken);
+    pID     = hexToInt(idToken);
+
+    for(uint8_t i = 8; i > 0u; i--)
+    {
+        CUBA_struct->pTxMsg[i-1u] = (uint8_t)(pValue&0xFFULL);
+        pValue >>= 8ULL;
+    }
+
+    if(pID > 2047UL)
+    {
+        return HAL_ERROR;   
+    }
+    else
+    {
+        CUBA_struct->CANTxHeader->Identifier = pID;
+    }
+
+    return HAL_OK;
 }
 
 /**
@@ -286,14 +423,14 @@ static uint8_t intToHex(uint32_t val, uint8_t* str)
     uint8_t cHex[16] = {'0', '1', '2', '3', '4', '5', '6', '7', \
                         '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'};
     /* Value is different to zero */
-    if(val != 0)
+    if(val != 0UL)
     {
         /* for Max. HEX characters value possible in 32 bits */
-        for(uint8_t i = 0; i < 8; i++)
+        for(uint8_t i = 0; i < 8u; i++)
         {
-            pos = (val>>rsv)&mask;  //Position gets HEX Character value
+            pos = (uint8_t)((val>>rsv)&mask);  //Position gets HEX Character value
             str[index] = cHex[pos]; //str[index] gets HEX Character value
-            rsv -= 4;               //Right Shift Value decrements 4 (4 bits per hex character)
+            rsv -= 4u;               //Right Shift Value decrements 4 (4 bits per hex character)
             index++;                //index increments by 1 
         }
         str[index] = '\0'; //str last character get NULL character
@@ -301,7 +438,7 @@ static uint8_t intToHex(uint32_t val, uint8_t* str)
     else /* value equals zero*/
     {   
         /* All characters are zero */
-         for(uint8_t i = 0; i < 8; i++)
+         for(uint8_t i = 0; i < 8u; i++)
          {
              str[i] = '0';
          }
@@ -323,16 +460,20 @@ static void integerToString(uint32_t value, uint8_t *str)
 {
     uint8_t temp[12] = {0}; //temporal array
     uint8_t index = 10;     //index equals last position
-    if(value != 0)
+    uint32_t valueCpy;
+
+    valueCpy = value;  
+
+    if(valueCpy != 0UL)
     {
         temp[index] = '\0'; //last position gets NULL character
-        while(value != 0UL)
+        while(valueCpy != 0UL)
         {
             index--;
-            temp[index] = (value%10UL)+48UL; //next position gets its ASCII value
-            value /= 10;
+            temp[index] = (valueCpy%10UL)+48UL; //next position gets its ASCII value
+            valueCpy /= (uint32_t)10;
         }
-        for(uint8_t i = 0; i < (11 - index); i++)
+        for(uint8_t i = 0; i < (11u - index); i++)
         {
             str[i] = temp[index+i]; //str gets temp appropriate values
         }   
@@ -346,64 +487,64 @@ static void integerToString(uint32_t value, uint8_t *str)
 
 static uint64_t hexToInt(uint8_t* str)
 {
-    /* Local variables */
-    uint8_t index = 0;         
-    uint64_t res = 0;
-
-    if((str != NULL))
+    uint64_t decimal = 0;
+    uint64_t base = 1;
+    uint8_t length;
+    int8_t i = 0;
+    
+    if(str == NULL)
     {
-        while(index < 16)
-        {
-            if((str[index]-48) < 10)
-            {
-                res |= (str[index] - 48);
-                res <<= 4;
-            }
-            else
-            {
-                res |= (str[index] - 55);
-                res <<= 4;
-            }
-            if(index != 15)
-            {
-                res <<= 4;
-            }
-            index++;
-        }
+        return 0;  
     }
 
-    return res;
+    length = strlen((char*)str);
+    
+    for(i = length-1u; i >= 0; i--)
+    {
+        if((str[i] >= (uint8_t)'0') && (str[i] <= (uint8_t)'9'))
+        {
+            decimal += (uint64_t)(str[i] - 48UL) * base;
+            base *= 16UL;
+        }
+        else if((str[i] >= (uint8_t)'A') && (str[i] <= (uint8_t)'F'))
+        {
+            decimal += (uint64_t)(str[i] - 55UL) * base;
+            base *= 16UL;
+        }
+        else if((str[i] >= (uint8_t)'a') && (str[i] <= (uint8_t)'f'))
+        {
+            decimal += (uint64_t)(str[i] - 87UL) * base;
+            base *= 16UL;
+        }
+        else
+        {
+            //nothing
+        }
+    }
+    return decimal;
 }
 
-
-void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo1ITs)
+void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo1ITs)    
 {
-    
+    CUBA_RxMsgTypeDef RxMsgToWrite = {0};
+
     if((hfdcan->Instance == FDCAN2) && (RxFifo1ITs == FDCAN_IT_RX_FIFO1_FULL))
     {
-        //If FIFO1 is full
+        //If FIFO1 overwrite
+        
     }
     if((hfdcan->Instance == FDCAN2) && (RxFifo1ITs == FDCAN_IT_RX_FIFO1_NEW_MESSAGE))
     {
-        //If there's a new msg in FIFO1
+        //If there's a new message in FIFO1
         /* Get FIFO1 Message */
         if(HAL_FDCAN_GetRxMessage(CUBA_struct->CANHandler, FDCAN_RX_FIFO1, CUBA_struct->CANRxHeader, CUBA_struct->pRxMsg) == HAL_OK)
         {
-            CUBA_struct->pRxFlag = 1;
-
-            /* create character string with Rx FDCAN message data */ 
-            CUBA_string(CUBA_struct);
-
-            /* DMA UART Transmit of Rx FDCAN analyzed data */
-            HAL_UART_Transmit_DMA(CUBA_struct->UARTHandler, CUBA_struct->CUBA_buffer, STRING_LENGTH);
-        }
+            (void)memcpy(&RxMsgToWrite.RxHeaderMsg, CUBA_struct->CANRxHeader, sizeof(RxMsgToWrite.RxHeaderMsg));
+            (void)memcpy(&RxMsgToWrite.RxDataMsg, CUBA_struct->pRxMsg, sizeof(RxMsgToWrite.RxDataMsg));
+            (void)HIL_QUEUE_Write(&fdcan_queue_struct, &RxMsgToWrite);
+        }   
     }
     
 }
-
-void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
-{
-
-} 
 
 
