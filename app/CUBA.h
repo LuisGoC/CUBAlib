@@ -41,6 +41,7 @@
 
     /* CUBA Prototype Functions */
     HAL_StatusTypeDef MOD_CUBA_Init         ( CUBA_HandleTypeDef *hcuba );
+    void HAL_CUBA_MspInit(CUBA_HandleTypeDef *hcuba);
     HAL_StatusTypeDef MOD_CUBA_PeriodicTask ( CUBA_HandleTypeDef *hcuba );
     void MOD_CUBA_GetUartData( UART_HandleTypeDef *huart, uint8_t data );
     void MOD_CUBA_GetUartTxCpltFlag( UART_HandleTypeDef *huart );
