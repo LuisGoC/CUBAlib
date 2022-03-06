@@ -2,9 +2,9 @@
 #include <stdint.h>
 #include "app_bsp.h"
 
-extern UART_HandleTypeDef UART_struct; //Uart structure
-extern FDCAN_HandleTypeDef CAN2_struct; 
-extern DMA_HandleTypeDef hdma_usart2_tx;
+extern UART_HandleTypeDef UART_struct; 
+extern FDCAN_HandleTypeDef CUBA_CAN_Structure; 
+extern DMA_HandleTypeDef CUBA_DMA_Structure;
 
 /**------------------------------------------------------------------------------------------------
 Brief.- Punto de entrada del programa
@@ -53,10 +53,10 @@ void USART2_LPUART2_IRQHandler(void)
 
 void TIM17_FDCAN_IT1_IRQHandler(void)
 {
-    HAL_FDCAN_IRQHandler(&CAN2_struct);
+    HAL_FDCAN_IRQHandler(&CUBA_CAN_Structure);
 }
 
 void DMA1_Channel1_IRQHandler(void)
 {
-  HAL_DMA_IRQHandler(&hdma_usart2_tx);
+  HAL_DMA_IRQHandler(&CUBA_DMA_Structure);
 }
