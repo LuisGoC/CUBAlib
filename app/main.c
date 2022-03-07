@@ -9,11 +9,6 @@ void CUBA_init(void);
 /* Global structures */
 CUBA_HandleTypeDef      CUBA_Handle;                     //Structure type variable that contains the configuration information for the CUBA library
 UART_HandleTypeDef      UART_struct;                     //Structure type variable that contains the configuration information for the specified UART 
-FDCAN_HandleTypeDef     CUBA_CAN_Structure;              //Structure type variable that contains the configuration information for the specified CAN
-FDCAN_TxHeaderTypeDef   CUBA_TxHeader_CAN_Structure;     //Structure type variable that contains the configuration information for the CAN Tx Header
-FDCAN_RxHeaderTypeDef   CUBA_RxHeader_CAN_Structure;     //Structure type variable that contains the configuration information for the CAN Rx Header
-FDCAN_FilterTypeDef     CUBA_Filter_CAN_Structure;       //Structure type variable that contains the configuration information for the CAN Filter 
-DMA_HandleTypeDef       CUBA_DMA_Structure;              //Structure type variable that contains the configuration information for the specified DMA
 
 uint8_t uart_rx_byte; //UART reception variable
 
@@ -86,11 +81,6 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
   */
 void CUBA_init(void)
 {
-    CUBA_Handle.UARTHandler     = &UART_struct;                     // Initialized by user
-    CUBA_Handle.CANHandler      = &CUBA_CAN_Structure;              // Initialized by CUBA library
-    CUBA_Handle.CANRxHeader     = &CUBA_RxHeader_CAN_Structure;     // Initialized by CUBA library
-    CUBA_Handle.CANTxHeader     = &CUBA_TxHeader_CAN_Structure;     // Initialized by CUBA library
-    CUBA_Handle.CANFilterHeader = &CUBA_Filter_CAN_Structure;       // Initialized by CUBA library
-    CUBA_Handle.DMAHandler      = &CUBA_DMA_Structure;              // Initialized by CUBA library
+    CUBA_Handle.UARTHandler     = &UART_struct;               
     MOD_CUBA_Init(&CUBA_Handle);
 }

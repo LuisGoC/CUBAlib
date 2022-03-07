@@ -38,18 +38,18 @@ HAL_StatusTypeDef MOD_CUBA_Init( CUBA_HandleTypeDef *hcuba )
 
     /* USART2 DMA Init */
     /* USART2_TX Init */
-    hcuba->DMAHandler->Instance                     =   DMA1_Channel1;
-    hcuba->DMAHandler->Init.Request                 =   DMA_REQUEST_USART2_TX;
-    hcuba->DMAHandler->Init.Direction               =   DMA_MEMORY_TO_PERIPH;
-    hcuba->DMAHandler->Init.PeriphInc               =   DMA_PINC_DISABLE;
-    hcuba->DMAHandler->Init.MemInc                  =   DMA_MINC_ENABLE;
-    hcuba->DMAHandler->Init.PeriphDataAlignment     =   DMA_PDATAALIGN_BYTE;
-    hcuba->DMAHandler->Init.MemDataAlignment        =   DMA_MDATAALIGN_BYTE;
-    hcuba->DMAHandler->Init.Mode                    =   DMA_NORMAL;
-    hcuba->DMAHandler->Init.Priority                =   DMA_PRIORITY_LOW;
+    hcuba->DMAHandler.Instance                     =   DMA1_Channel1;
+    hcuba->DMAHandler.Init.Request                 =   DMA_REQUEST_USART2_TX;
+    hcuba->DMAHandler.Init.Direction               =   DMA_MEMORY_TO_PERIPH;
+    hcuba->DMAHandler.Init.PeriphInc               =   DMA_PINC_DISABLE;
+    hcuba->DMAHandler.Init.MemInc                  =   DMA_MINC_ENABLE;
+    hcuba->DMAHandler.Init.PeriphDataAlignment     =   DMA_PDATAALIGN_BYTE;
+    hcuba->DMAHandler.Init.MemDataAlignment        =   DMA_MDATAALIGN_BYTE;
+    hcuba->DMAHandler.Init.Mode                    =   DMA_NORMAL;
+    hcuba->DMAHandler.Init.Priority                =   DMA_PRIORITY_LOW;
 
     /* DMA init */
-    HAL_DMA_Init(hcuba->DMAHandler);
+    HAL_DMA_Init(&hcuba->DMAHandler);
 
     /* DMA interrupt init */
     /* DMA1_Channel1_IRQn interrupt configuration */
@@ -57,95 +57,62 @@ HAL_StatusTypeDef MOD_CUBA_Init( CUBA_HandleTypeDef *hcuba )
     HAL_NVIC_EnableIRQ(DMA1_Channel1_IRQn);
 
     /* Linking UART Tx DMA Handle parameters */
-    hcuba->UARTHandler->hdmatx = hcuba->DMAHandler; 
-    hcuba->DMAHandler->Parent = hcuba->UARTHandler;
+    hcuba->UARTHandler->hdmatx = &hcuba->DMAHandler; 
+    hcuba->DMAHandler.Parent   = hcuba->UARTHandler;
 
-    /* check the FDCAN handle */
-    if(hcuba->CANHandler == NULL)
-    {
-        return HAL_ERROR;  
-    }
-    else
-    {
-        /* FDCAN2 Init */
-        hcuba->CANHandler->Instance                     =   FDCAN2;
-        hcuba->CANHandler->Init.Mode                    =   FDCAN_MODE_NORMAL;
-        hcuba->CANHandler->Init.AutoRetransmission      =   DISABLE;
-        hcuba->CANHandler->Init.ClockDivider            =   FDCAN_CLOCK_DIV1;
-        hcuba->CANHandler->Init.TxFifoQueueMode         =   FDCAN_TX_FIFO_OPERATION;
-        hcuba->CANHandler->Init.TransmitPause           =   DISABLE;
-        hcuba->CANHandler->Init.ProtocolException       =   DISABLE;
-        hcuba->CANHandler->Init.ExtFiltersNbr           =   0;
-        hcuba->CANHandler->Init.StdFiltersNbr           =   0;
-        hcuba->CANHandler->Init.FrameFormat             =   FDCAN_FRAME_CLASSIC;
-        hcuba->CANHandler->Init.NominalPrescaler        =   30;
-        hcuba->CANHandler->Init.NominalSyncJumpWidth    =   1;
-        hcuba->CANHandler->Init.NominalTimeSeg1         =   13;
-        hcuba->CANHandler->Init.NominalTimeSeg2         =   2;
-        HAL_FDCAN_Init(hcuba->CANHandler);
-
-        /* Init the low level hardware: CLOCK, GPIO */ 
-        HAL_CUBA_MspInit(hcuba);
-        
-        /* FDCAN interrupt init */
-        /* TIM17_FDCAN_IT1_IRQn interrupt configuration */
-        HAL_NVIC_SetPriority(TIM17_FDCAN_IT1_IRQn, 2, 0);
-        HAL_NVIC_EnableIRQ(TIM17_FDCAN_IT1_IRQn);
-    }
-
-    /* Check FDCAN2 Filter Handle */
-    if(hcuba->CANFilterHeader == NULL)
-    {
-        return HAL_ERROR;  
-    }
-    else
-    {
-        /* FDCAN2 Rx Filter init, disable */
-        hcuba->CANFilterHeader->FilterConfig = FDCAN_FILTER_DISABLE;
-        hcuba->CANFilterHeader->IdType = FDCAN_STANDARD_ID;
-        HAL_FDCAN_ConfigFilter(hcuba->CANHandler, hcuba->CANFilterHeader);
+    /* FDCAN2 Init */
+    hcuba->CANHandler.Instance                     =   FDCAN2;
+    hcuba->CANHandler.Init.Mode                    =   FDCAN_MODE_NORMAL;
+    hcuba->CANHandler.Init.AutoRetransmission      =   DISABLE;
+    hcuba->CANHandler.Init.ClockDivider            =   FDCAN_CLOCK_DIV1;
+    hcuba->CANHandler.Init.TxFifoQueueMode         =   FDCAN_TX_FIFO_OPERATION;
+    hcuba->CANHandler.Init.TransmitPause           =   DISABLE;
+    hcuba->CANHandler.Init.ProtocolException       =   DISABLE;
+    hcuba->CANHandler.Init.ExtFiltersNbr           =   0;
+    hcuba->CANHandler.Init.StdFiltersNbr           =   0;
+    hcuba->CANHandler.Init.FrameFormat             =   FDCAN_FRAME_CLASSIC;
+    hcuba->CANHandler.Init.NominalPrescaler        =   30;
+    hcuba->CANHandler.Init.NominalSyncJumpWidth    =   1;
+    hcuba->CANHandler.Init.NominalTimeSeg1         =   13;
+    hcuba->CANHandler.Init.NominalTimeSeg2         =   2;
+    HAL_FDCAN_Init(&hcuba->CANHandler);
+    /* Init the low level hardware: CLOCK, GPIO */ 
+    HAL_CUBA_MspInit(hcuba);
     
-        /* FDCAN2 Global Rx filter accepts all non-matching frames in FIFO1 */  
-        HAL_FDCAN_ConfigGlobalFilter(hcuba->CANHandler, FDCAN_ACCEPT_IN_RX_FIFO1, FDCAN_REJECT, FDCAN_FILTER_REMOTE, FDCAN_REJECT_REMOTE);
-    }
+    /* FDCAN interrupt init */
+    /* TIM17_FDCAN_IT1_IRQn interrupt configuration */
+    HAL_NVIC_SetPriority(TIM17_FDCAN_IT1_IRQn, 2, 0);
+    HAL_NVIC_EnableIRQ(TIM17_FDCAN_IT1_IRQn);
+
+    /* FDCAN2 Rx Filter init, disable */
+    hcuba->CANFilterHeader.FilterConfig = FDCAN_FILTER_DISABLE;
+    hcuba->CANFilterHeader.IdType = FDCAN_STANDARD_ID;
+    HAL_FDCAN_ConfigFilter(&hcuba->CANHandler, &hcuba->CANFilterHeader);
+
+    /* FDCAN2 Global Rx filter accepts all non-matching frames in FIFO1 */  
+    HAL_FDCAN_ConfigGlobalFilter(&hcuba->CANHandler, FDCAN_ACCEPT_IN_RX_FIFO1, FDCAN_REJECT, FDCAN_FILTER_REMOTE, FDCAN_REJECT_REMOTE);
     
     /* Assign FIFO1 interrupt group to interrupt Line 1 */
     /* Enable interrupt notifications when FIFO1 is full */
-    (void)HAL_FDCAN_ConfigInterruptLines(hcuba->CANHandler, FDCAN_IT_GROUP_RX_FIFO1, FDCAN_INTERRUPT_LINE1);
-    (void)HAL_FDCAN_ActivateNotification(hcuba->CANHandler, FDCAN_IT_RX_FIFO1_FULL, FDCAN_RX_FIFO1);
-    (void)HAL_FDCAN_ActivateNotification(hcuba->CANHandler, FDCAN_IT_RX_FIFO1_NEW_MESSAGE, FDCAN_RX_FIFO1);
+    (void)HAL_FDCAN_ConfigInterruptLines(&hcuba->CANHandler, FDCAN_IT_GROUP_RX_FIFO1, FDCAN_INTERRUPT_LINE1);
+    (void)HAL_FDCAN_ActivateNotification(&hcuba->CANHandler, FDCAN_IT_RX_FIFO1_FULL, FDCAN_RX_FIFO1);
+    (void)HAL_FDCAN_ActivateNotification(&hcuba->CANHandler, FDCAN_IT_RX_FIFO1_NEW_MESSAGE, FDCAN_RX_FIFO1);
 
-    /* Check FDCAN2 Rx Handle */
-    if(hcuba->CANRxHeader == NULL)
-    {
-        return HAL_ERROR;  
-    }
-    else
-    {
-        /* FDCAN2 Rx handle parameters initialization */
-        hcuba->CANRxHeader->BitRateSwitch = FDCAN_BRS_OFF;
-        hcuba->CANRxHeader->DataLength = FDCAN_DLC_BYTES_8;
-        hcuba->CANRxHeader->ErrorStateIndicator = FDCAN_ESI_PASSIVE;
-        hcuba->CANRxHeader->FDFormat = FDCAN_CLASSIC_CAN;
-    }
+    /* FDCAN2 Rx handle parameters initialization */
+    hcuba->CANRxHeader.BitRateSwitch = FDCAN_BRS_OFF;
+    hcuba->CANRxHeader.DataLength = FDCAN_DLC_BYTES_8;
+    hcuba->CANRxHeader.ErrorStateIndicator = FDCAN_ESI_PASSIVE;
+    hcuba->CANRxHeader.FDFormat = FDCAN_CLASSIC_CAN; 
 
-    /* Check FDCAN2 Tx Handle */
-    if(hcuba->CANTxHeader == NULL)
-    {
-        return HAL_ERROR;   
-    }
-    else
-    {
-        /* FDCAN2 Tx handle parameters initialization */
-        hcuba->CANTxHeader->DataLength = FDCAN_DLC_BYTES_8;
-        hcuba->CANTxHeader->Identifier = 0x0FF;
-        hcuba->CANTxHeader->IdType = FDCAN_STANDARD_ID;
-        hcuba->CANTxHeader->FDFormat = FDCAN_CLASSIC_CAN;
-        hcuba->CANTxHeader->TxFrameType = FDCAN_DATA_FRAME;
-        hcuba->CANTxHeader->BitRateSwitch = FDCAN_BRS_OFF;
-        hcuba->CANTxHeader->TxEventFifoControl = FDCAN_NO_TX_EVENTS;
-    }
-
+    /* FDCAN2 Tx handle parameters initialization */
+    hcuba->CANTxHeader.DataLength = FDCAN_DLC_BYTES_8;
+    hcuba->CANTxHeader.Identifier = 0x0FF;
+    hcuba->CANTxHeader.IdType = FDCAN_STANDARD_ID;
+    hcuba->CANTxHeader.FDFormat = FDCAN_CLASSIC_CAN;
+    hcuba->CANTxHeader.TxFrameType = FDCAN_DATA_FRAME;
+    hcuba->CANTxHeader.BitRateSwitch = FDCAN_BRS_OFF;
+    hcuba->CANTxHeader.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
+    
     //FDCAN queue initialization
     fdcan_queue_struct.Buffer = hcuba->RxMsgBuffer;
     fdcan_queue_struct.Elements = 10;
@@ -163,7 +130,7 @@ HAL_StatusTypeDef MOD_CUBA_Init( CUBA_HandleTypeDef *hcuba )
     CUBA_struct = hcuba;
 
     /* FDCAN2 Start */
-    HAL_FDCAN_Start(hcuba->CANHandler);
+    HAL_FDCAN_Start(&hcuba->CANHandler);
 
     return HAL_OK;
 }
@@ -215,7 +182,7 @@ __weak void HAL_CUBA_MspInit(CUBA_HandleTypeDef *hcuba)
         {
             if(cmd_process(uart_cmd_array) == HAL_OK)
             {
-                (void)HAL_FDCAN_AddMessageToTxFifoQ(hcuba->CANHandler, hcuba->CANTxHeader, hcuba->pTxMsg);   
+                (void)HAL_FDCAN_AddMessageToTxFifoQ(&hcuba->CANHandler, &hcuba->CANTxHeader, hcuba->pTxMsg);   
             }
             else
             {
@@ -399,7 +366,7 @@ static HAL_StatusTypeDef cmd_process(uint8_t *cmd)
     }
     else
     {
-        CUBA_struct->CANTxHeader->Identifier = pID;
+        CUBA_struct->CANTxHeader.Identifier = pID;
     }
 
     return HAL_OK;
@@ -537,9 +504,9 @@ void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo1ITs)
     {
         //If there's a new message in FIFO1
         /* Get FIFO1 Message */
-        if(HAL_FDCAN_GetRxMessage(CUBA_struct->CANHandler, FDCAN_RX_FIFO1, CUBA_struct->CANRxHeader, CUBA_struct->pRxMsg) == HAL_OK)
+        if(HAL_FDCAN_GetRxMessage(&CUBA_struct->CANHandler, FDCAN_RX_FIFO1, &CUBA_struct->CANRxHeader, CUBA_struct->pRxMsg) == HAL_OK)
         {
-            (void)memcpy(&RxMsgToWrite.RxHeaderMsg, CUBA_struct->CANRxHeader, sizeof(RxMsgToWrite.RxHeaderMsg));
+            (void)memcpy(&RxMsgToWrite.RxHeaderMsg, &CUBA_struct->CANRxHeader, sizeof(RxMsgToWrite.RxHeaderMsg));
             (void)memcpy(&RxMsgToWrite.RxDataMsg, CUBA_struct->pRxMsg, sizeof(RxMsgToWrite.RxDataMsg));
             (void)HIL_QUEUE_Write(&fdcan_queue_struct, &RxMsgToWrite);
         }   

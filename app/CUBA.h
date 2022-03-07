@@ -26,11 +26,11 @@
     typedef struct
     {
         UART_HandleTypeDef      *UARTHandler;           //pointer to UART_HandleTypeDef structure CUBA library shall use
-        FDCAN_HandleTypeDef     *CANHandler;            //pointer to FDCAN_HandleTypeDef structure CUBA library shall use   
-        FDCAN_TxHeaderTypeDef   *CANTxHeader;           //pointer to FDCAN_TxHeaderTypeDef structure CUBA library shall use
-        FDCAN_RxHeaderTypeDef   *CANRxHeader;           //pointer to FDCAN_RxHeaderTypeDef structure CUBA library shall use
-        FDCAN_FilterTypeDef     *CANFilterHeader;       //pointer to FDCAN_FilterTypeDef structure CUBA library shall use
-        DMA_HandleTypeDef       *DMAHandler;            //pointer to DMA_HandleTypeDef structure CUBA library shall use
+        FDCAN_HandleTypeDef     CANHandler;            
+        FDCAN_TxHeaderTypeDef   CANTxHeader;          
+        FDCAN_RxHeaderTypeDef   CANRxHeader;           
+        FDCAN_FilterTypeDef     CANFilterHeader;       
+        DMA_HandleTypeDef       DMAHandler;            
         uint8_t                 CUBA_buffer[100];       //Buffer of 100 elements to store CUBA analyzed data
         uint8_t                 pRxMsg[8];              //Buffer of 8 elements to store Rx FDCAN2 Msg 
         uint8_t                 pTxMsg[8];
