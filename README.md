@@ -14,7 +14,19 @@ ___
 1. [Authors](#authors)
 ___
 ## About the Project
-The library is for the STM32G0B1RE Nucleo Board and uses the STM32 HAL drivers. It uses one of the two CAN instances in the Nucleo Board to simulate a CAN bus analyzer. The user can use the other CAN instance to transmit data and view it on the computer's serial port terminal. In addition, the user can also transmit data from the CUBA's CAN instance through the computer's serial port terminal using an AT command.
+The library is for the STM32G0B1RE Nucleo Board and uses the STM32 HAL drivers. It uses one of the two CAN instances in the Nucleo Board, and one UART to simulate a CAN bus analyzer. The user can use the other CAN instance to transmit data and view it on the computer's serial port terminal. In addition, the user can also transmit data from the CUBA's CAN instance through the computer's serial port terminal using an AT command.
+
+Command:
+``
+ATSMCAN=< ID msg >,< 8 bytes of data in hex >\r
+``
+
+Example:
+``
+ATSMCAN=1FF,484F4C41484F4C41
+``
+
+The example transmits through the CUBA's CAN instance the message "HOLAHOLA" with the message identifier 0x1FF.
 
 **[Back to top](#table-of-contents)**
 
@@ -84,13 +96,21 @@ make debug
 **[Back to top](#table-of-contents)**
 
 ### Usage
-*The clock frequency must be 48Mhz
-*The CAN speed should be 100kbps
-*The CAN instance for CUBA library is FDCAN2
-*The CUBA library uses CAN interrupt signal IT1 TIM17_FDCAN_IT1_IRQn
-*The user should configure in the CUBA MSP the GPIO AF PINS for FDCAN2
+There are specific steps to follow to use the library correctly:
+- The user must configure the clock frequency at 48MHz.
+- The user must initialize the MSP low-level hardware resources: RCC, GPIOs for the library's FDCAN instance using the HAL_CUBA_MspInit function.
+- The CAN bus speed is 100Mbps (for easy hardware configuration purposes).
+- The CAN instance for the CUBA library is FDCAN2, so the user should use the FDCAN1 instance.
+- The CUBA library uses Rx Handle FIFO1 to store received messages, so the user should use Rx Handle FIFO0.
+- The CUBA library uses IRQn 22 (TIM17_FDCAN_IT1_IRQn), so the user should use IRQn 21 (TIM16_FDCAN_IT0_IRQn) in case of need interruptions in the FDCAN1 instance.
+- The user must initialize the CUBA library using a CUBA_HandleTypeDef structure type variable and add the interrupt handler function (TIM17_FDCAN_IT1_IRQHandler) in the app_ints.c file. 
+- The user should call MOD_CUBA_GetUartTxCpltFlag function in the HAL_UART_TxCpltCallback function.
+- The user should call MOD_CUBA_GetUartData function in the HAL_UART_RxCpltCallback function. 
 
-//Incomplete
+#### Hardware Scheme
+Single wire CAN bus without transceivers connection.
+
+![Schematic Diagram](https://github.com/LuisGoC/CUBAlib/blob/main/CUBA_draw.png)
 
 **[Back to top](#table-of-contents)**
 
