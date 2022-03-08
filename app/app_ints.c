@@ -1,10 +1,9 @@
 #include "stm32g0xx.h"
 #include <stdint.h>
 #include "app_bsp.h"
+#include "CUBA.h"
 
-extern UART_HandleTypeDef UART_struct; 
-extern FDCAN_HandleTypeDef CUBA_CAN_Structure; 
-extern DMA_HandleTypeDef CUBA_DMA_Structure;
+extern CUBA_HandleTypeDef      CUBA_Handle;
 
 /**------------------------------------------------------------------------------------------------
 Brief.- Punto de entrada del programa
@@ -48,15 +47,15 @@ void SysTick_Handler( void )
 
 void USART2_LPUART2_IRQHandler(void)
 {
-    HAL_UART_IRQHandler(&UART_struct);
+    HAL_UART_IRQHandler(CUBA_Handle.UARTHandler);
 }
 
 void TIM17_FDCAN_IT1_IRQHandler(void)
 {
-    HAL_FDCAN_IRQHandler(&CUBA_CAN_Structure);
+    HAL_FDCAN_IRQHandler(&CUBA_Handle.CANHandler);
 }
 
 void DMA1_Channel1_IRQHandler(void)
 {
-  HAL_DMA_IRQHandler(&CUBA_DMA_Structure);
+  HAL_DMA_IRQHandler(&CUBA_Handle.DMAHandler);
 }

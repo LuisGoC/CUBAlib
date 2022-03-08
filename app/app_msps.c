@@ -65,7 +65,7 @@ void HAL_CUBA_MspInit(CUBA_HandleTypeDef *hcuba)
     __HAL_RCC_FDCAN_CLK_ENABLE();
     __HAL_RCC_GPIOB_CLK_ENABLE();
     
-    if(hcuba->CANHandler->Instance == FDCAN2)
+    if(hcuba->CANHandler.Instance == FDCAN2)
     {
         GpioCanStruct.Mode = GPIO_MODE_AF_PP;
         GpioCanStruct.Alternate = GPIO_AF3_FDCAN2;
