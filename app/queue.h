@@ -1,7 +1,8 @@
 #ifndef QUEUE_H_
     #define QUEUE_H_
 
-    #include "app_bsp.h"
+    #include <stdint.h>
+    #include <string.h>
 
     typedef struct
     {
