@@ -7,9 +7,9 @@ static     uint8_t           intToHex             ( uint32_t val, uint8_t* str )
 static     void              integerToString      ( uint32_t value, uint8_t *str );
 static     uint64_t          hexToInt             (uint8_t* str);
 
-static QUEUE_HandleTypeDef fdcan_queue_struct   =   {0};
-static QUEUE_HandleTypeDef uart_queue_struct    =   {0};
-static CUBA_HandleTypeDef  *CUBA_struct         =   NULL;
+static QUEUE_HandleTypeDef fdcan_queue_struct     =   {0};
+static QUEUE_HandleTypeDef uart_queue_struct      =   {0};
+static CUBA_HandleTypeDef  *CUBA_HandlePtr        =   NULL;
 
 /**
   * @brief Initializes the CUBA library necessary peripherals.
@@ -49,7 +49,7 @@ HAL_StatusTypeDef MOD_CUBA_Init( CUBA_HandleTypeDef *hcuba )
     hcuba->DMAHandler.Init.Priority                =   DMA_PRIORITY_LOW;
 
     /* DMA init */
-    HAL_DMA_Init(&hcuba->DMAHandler);
+    HAL_DMA_Init(&(hcuba->DMAHandler));
 
     /* DMA interrupt init */
     /* DMA1_Channel1_IRQn interrupt configuration */
@@ -57,8 +57,7 @@ HAL_StatusTypeDef MOD_CUBA_Init( CUBA_HandleTypeDef *hcuba )
     HAL_NVIC_EnableIRQ(DMA1_Channel1_IRQn);
 
     /* Linking UART Tx DMA Handle parameters */
-    hcuba->UARTHandler->hdmatx = &hcuba->DMAHandler; 
-    hcuba->DMAHandler.Parent   = hcuba->UARTHandler;
+    __HAL_LINKDMA(hcuba->UARTHandler, hdmatx, hcuba->DMAHandler); 
 
     /* FDCAN2 Init */
     hcuba->CANHandler.Instance                     =   FDCAN2;
@@ -75,10 +74,8 @@ HAL_StatusTypeDef MOD_CUBA_Init( CUBA_HandleTypeDef *hcuba )
     hcuba->CANHandler.Init.NominalSyncJumpWidth    =   1;
     hcuba->CANHandler.Init.NominalTimeSeg1         =   13;
     hcuba->CANHandler.Init.NominalTimeSeg2         =   2;
-    HAL_FDCAN_Init(&hcuba->CANHandler);
-    /* Init the low level hardware: CLOCK, GPIO */ 
-    HAL_CUBA_MspInit(hcuba);
-    
+    HAL_FDCAN_Init(&(hcuba->CANHandler));
+        
     /* FDCAN interrupt init */
     /* TIM17_FDCAN_IT1_IRQn interrupt configuration */
     HAL_NVIC_SetPriority(TIM17_FDCAN_IT1_IRQn, 2, 0);
@@ -87,22 +84,23 @@ HAL_StatusTypeDef MOD_CUBA_Init( CUBA_HandleTypeDef *hcuba )
     /* FDCAN2 Rx Filter init, disable */
     hcuba->CANFilterHeader.FilterConfig = FDCAN_FILTER_DISABLE;
     hcuba->CANFilterHeader.IdType = FDCAN_STANDARD_ID;
-    HAL_FDCAN_ConfigFilter(&hcuba->CANHandler, &hcuba->CANFilterHeader);
+    HAL_FDCAN_ConfigFilter(&(hcuba->CANHandler), &(hcuba->CANFilterHeader));
 
     /* FDCAN2 Global Rx filter accepts all non-matching frames in FIFO1 */  
-    HAL_FDCAN_ConfigGlobalFilter(&hcuba->CANHandler, FDCAN_ACCEPT_IN_RX_FIFO1, FDCAN_REJECT, FDCAN_FILTER_REMOTE, FDCAN_REJECT_REMOTE);
+    HAL_FDCAN_ConfigGlobalFilter(&(hcuba->CANHandler), FDCAN_ACCEPT_IN_RX_FIFO1, FDCAN_REJECT, FDCAN_FILTER_REMOTE, FDCAN_REJECT_REMOTE);
+    
     
     /* Assign FIFO1 interrupt group to interrupt Line 1 */
     /* Enable interrupt notifications when FIFO1 is full */
-    (void)HAL_FDCAN_ConfigInterruptLines(&hcuba->CANHandler, FDCAN_IT_GROUP_RX_FIFO1, FDCAN_INTERRUPT_LINE1);
-    (void)HAL_FDCAN_ActivateNotification(&hcuba->CANHandler, FDCAN_IT_RX_FIFO1_FULL, FDCAN_RX_FIFO1);
-    (void)HAL_FDCAN_ActivateNotification(&hcuba->CANHandler, FDCAN_IT_RX_FIFO1_NEW_MESSAGE, FDCAN_RX_FIFO1);
+    (void)HAL_FDCAN_ConfigInterruptLines(&(hcuba->CANHandler), FDCAN_IT_GROUP_RX_FIFO1, FDCAN_INTERRUPT_LINE1);
+    (void)HAL_FDCAN_ActivateNotification(&(hcuba->CANHandler), FDCAN_IT_RX_FIFO1_FULL, FDCAN_RX_FIFO1);
+    (void)HAL_FDCAN_ActivateNotification(&(hcuba->CANHandler), FDCAN_IT_RX_FIFO1_NEW_MESSAGE, FDCAN_RX_FIFO1);
 
     /* FDCAN2 Rx handle parameters initialization */
     hcuba->CANRxHeader.BitRateSwitch = FDCAN_BRS_OFF;
     hcuba->CANRxHeader.DataLength = FDCAN_DLC_BYTES_8;
     hcuba->CANRxHeader.ErrorStateIndicator = FDCAN_ESI_PASSIVE;
-    hcuba->CANRxHeader.FDFormat = FDCAN_CLASSIC_CAN; 
+    hcuba->CANRxHeader.FDFormat = FDCAN_CLASSIC_CAN;
 
     /* FDCAN2 Tx handle parameters initialization */
     hcuba->CANTxHeader.DataLength = FDCAN_DLC_BYTES_8;
@@ -112,7 +110,7 @@ HAL_StatusTypeDef MOD_CUBA_Init( CUBA_HandleTypeDef *hcuba )
     hcuba->CANTxHeader.TxFrameType = FDCAN_DATA_FRAME;
     hcuba->CANTxHeader.BitRateSwitch = FDCAN_BRS_OFF;
     hcuba->CANTxHeader.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
-    
+
     //FDCAN queue initialization
     fdcan_queue_struct.Buffer = hcuba->RxMsgBuffer;
     fdcan_queue_struct.Elements = 10;
@@ -127,27 +125,12 @@ HAL_StatusTypeDef MOD_CUBA_Init( CUBA_HandleTypeDef *hcuba )
 
     hcuba->uartCpltFlag = SET;
 
-    CUBA_struct = hcuba;
+    CUBA_HandlePtr = hcuba;
 
     /* FDCAN2 Start */
-    HAL_FDCAN_Start(&hcuba->CANHandler);
+    HAL_FDCAN_Start(&(hcuba->CANHandler));
 
     return HAL_OK;
-}
-
-/**
-  * @brief Initialize the CUBA MSP.
-  * @param huart UART handle.
-  * @retval None
-  */
-__weak void HAL_CUBA_MspInit(CUBA_HandleTypeDef *hcuba)
-{
-  /* Prevent unused argument(s) compilation warning */
-  UNUSED(hcuba);
-
-  /* NOTE : This function should not be modified, when the callback is needed,
-            the HAL_UART_MspInit can be implemented in the user file
-   */
 }
 
 /**
@@ -182,7 +165,7 @@ __weak void HAL_CUBA_MspInit(CUBA_HandleTypeDef *hcuba)
         {
             if(cmd_process(uart_cmd_array) == HAL_OK)
             {
-                (void)HAL_FDCAN_AddMessageToTxFifoQ(&hcuba->CANHandler, &hcuba->CANTxHeader, hcuba->pTxMsg);   
+                (void)HAL_FDCAN_AddMessageToTxFifoQ(&(hcuba->CANHandler), &(hcuba->CANTxHeader), hcuba->pTxMsg);   
             }
             else
             {
@@ -246,7 +229,7 @@ void MOD_CUBA_GetUartTxCpltFlag( UART_HandleTypeDef *huart )
 {
     if(huart->Instance == USART2)
     {
-        CUBA_struct->uartCpltFlag = SET;
+        CUBA_HandlePtr->uartCpltFlag = SET;
     }
 }
 
@@ -356,7 +339,7 @@ static HAL_StatusTypeDef cmd_process(uint8_t *cmd)
 
     for(uint8_t i = 8; i > 0u; i--)
     {
-        CUBA_struct->pTxMsg[i-1u] = (uint8_t)(pValue&0xFFULL);
+        CUBA_HandlePtr->pTxMsg[i-1u] = (uint8_t)(pValue&0xFFULL);
         pValue >>= 8ULL;
     }
 
@@ -366,7 +349,7 @@ static HAL_StatusTypeDef cmd_process(uint8_t *cmd)
     }
     else
     {
-        CUBA_struct->CANTxHeader.Identifier = pID;
+        CUBA_HandlePtr->CANTxHeader.Identifier = pID;
     }
 
     return HAL_OK;
@@ -504,10 +487,10 @@ void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo1ITs)
     {
         //If there's a new message in FIFO1
         /* Get FIFO1 Message */
-        if(HAL_FDCAN_GetRxMessage(&CUBA_struct->CANHandler, FDCAN_RX_FIFO1, &CUBA_struct->CANRxHeader, CUBA_struct->pRxMsg) == HAL_OK)
+        if(HAL_FDCAN_GetRxMessage(&(CUBA_HandlePtr->CANHandler), FDCAN_RX_FIFO1, &(CUBA_HandlePtr->CANRxHeader), &(CUBA_HandlePtr->pRxMsg[0])) == HAL_OK)
         {
-            (void)memcpy(&RxMsgToWrite.RxHeaderMsg, &CUBA_struct->CANRxHeader, sizeof(RxMsgToWrite.RxHeaderMsg));
-            (void)memcpy(&RxMsgToWrite.RxDataMsg, CUBA_struct->pRxMsg, sizeof(RxMsgToWrite.RxDataMsg));
+            (void)memcpy(&RxMsgToWrite.RxHeaderMsg, &(CUBA_HandlePtr->CANRxHeader), sizeof(RxMsgToWrite.RxHeaderMsg));
+            (void)memcpy(&(RxMsgToWrite.RxDataMsg[0]), &(CUBA_HandlePtr->pRxMsg[0]), sizeof(RxMsgToWrite.RxDataMsg));
             (void)HIL_QUEUE_Write(&fdcan_queue_struct, &RxMsgToWrite);
         }   
     }

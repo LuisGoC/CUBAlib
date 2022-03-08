@@ -1,7 +1,6 @@
 #include "stm32g0xx.h"
 #include <stdint.h>
 #include "app_bsp.h"
-#include "CUBA.h"
 
 void HAL_MspInit( void )
 {
@@ -55,23 +54,6 @@ void HAL_UART_MspInit(UART_HandleTypeDef *huart)
 
 void HAL_FDCAN_MspInit(FDCAN_HandleTypeDef *hfdcan)
 {
-    //User CAN instance low level hardware
+    //User and CUBA CAN instance low level hardware
 }
 
-void HAL_CUBA_MspInit(CUBA_HandleTypeDef *hcuba)
-{
-    GPIO_InitTypeDef GpioCanStruct;
-
-    __HAL_RCC_FDCAN_CLK_ENABLE();
-    __HAL_RCC_GPIOB_CLK_ENABLE();
-    
-    if(hcuba->CANHandler.Instance == FDCAN2)
-    {
-        GpioCanStruct.Mode = GPIO_MODE_AF_PP;
-        GpioCanStruct.Alternate = GPIO_AF3_FDCAN2;
-        GpioCanStruct.Pin = GPIO_PIN_0 | GPIO_PIN_1;
-        GpioCanStruct.Pull = GPIO_NOPULL;
-        GpioCanStruct.Speed = GPIO_SPEED_FREQ_HIGH;
-        HAL_GPIO_Init(GPIOB, &GpioCanStruct);
-    }
-}
