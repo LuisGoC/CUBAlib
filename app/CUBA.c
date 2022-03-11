@@ -95,7 +95,7 @@ HAL_StatusTypeDef MOD_CUBA_Init( CUBA_HandleTypeDef *hcuba )
     __HAL_RCC_FDCAN_CLK_ENABLE();
     __HAL_RCC_GPIOB_CLK_ENABLE();
 
-    /* pin 0(tx) and pin 1(rx) set as AF for FDCAN2*/
+    /* pin 0(rx) and pin 1(tx) set as AF for FDCAN2*/
     GpioCanStruct.Mode      = GPIO_MODE_AF_PP;
     GpioCanStruct.Alternate = GPIO_AF3_FDCAN2;
     GpioCanStruct.Pin       = GPIO_PIN_0 | GPIO_PIN_1;

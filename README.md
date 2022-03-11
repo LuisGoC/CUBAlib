@@ -98,14 +98,12 @@ make debug
 ### Usage
 There are specific steps to follow to use the library correctly:
 - The user must configure the clock frequency at 48MHz.
-- The user must initialize the MSP low-level hardware resources: RCC, GPIOs for the library's FDCAN instance using the HAL_CUBA_MspInit function.
-- The CAN bus speed is 100Mbps (for easy hardware configuration purposes).
-- The CAN instance for the CUBA library is FDCAN2, so the user should use the FDCAN1 instance.
+- The CAN bus speed is 100 Kbps (for easy hardware configuration purposes).
+- The CUBA library uses FDCAN2 instance, so the user should use the FDCAN1 instance.
+- The CUBA library sets MSP configuration for FDCAN2 as PB0(RX) and PB1(TX).
 - The CUBA library uses Rx Handle FIFO1 to store received messages, so the user should use Rx Handle FIFO0.
 - The CUBA library uses IRQn 22 (TIM17_FDCAN_IT1_IRQn), so the user should use IRQn 21 (TIM16_FDCAN_IT0_IRQn) in case of need interruptions in the FDCAN1 instance.
-- The user must initialize the CUBA library using a CUBA_HandleTypeDef structure type variable and add the interrupt handler function (TIM17_FDCAN_IT1_IRQHandler) in the app_ints.c file. 
-- The user should call MOD_CUBA_GetUartTxCpltFlag function in the HAL_UART_TxCpltCallback function.
-- The user should call MOD_CUBA_GetUartData function in the HAL_UART_RxCpltCallback function. 
+- The user must initialize the CUBA library using a CUBA_HandleTypeDef structure type variable. 
 
 #### Hardware Scheme
 Single wire CAN bus without transceivers connection.
