@@ -3,24 +3,18 @@
 #include "CUBA.h" //<-- Include CUBA library
 
 /* Function prototypes */
-void UART_init(void);
-void CUBA_init(void);
+void SystemClock_Config(void);
 
-/* Global structures */
-CUBA_HandleTypeDef      CUBA_Handle;                     //Structure type variable that contains the configuration information for the CUBA library
-UART_HandleTypeDef      UART_struct;                     //Structure type variable that contains the configuration information for the specified UART 
-
-uint8_t uart_rx_byte; //UART reception variable
+/* Global variables */
+CUBA_HandleTypeDef      CUBA_Handle;    //Structure type variable that contains the configuration information for the CUBA library
 
 int main( void )
 {
     /* Initialization function calls */
     HAL_Init();
-    UART_init();
-    CUBA_init();
+    SystemClock_Config();
+    MOD_CUBA_Init(&CUBA_Handle);
 
-    /* Receive an amount of data in interrupt mode. */
-    (void)HAL_UART_Receive_IT(&UART_struct, &uart_rx_byte, 1);
     for( ; ; )
     {
         /* Add your code here */
@@ -30,57 +24,38 @@ int main( void )
 }
 
 /**
-  * @brief UART initialization function.
-  * @param none
-  * @retval None
-  */
-void UART_init(void)
+  * @brief Function that configures system clock. (48Mhz)
+  * @param void
+  * @retval none
+  **/
+void SystemClock_Config(void)
 {
-    UART_struct.Instance            = USART2;
-    UART_struct.Init.BaudRate       = 115200;
-    UART_struct.Init.ClockPrescaler = UART_PRESCALER_DIV1;
-    UART_struct.Init.HwFlowCtl      = UART_HWCONTROL_NONE;
-    UART_struct.Init.Mode           = UART_MODE_TX_RX;
-    UART_struct.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLED;
-    UART_struct.Init.OverSampling   = UART_OVERSAMPLING_16;
-    UART_struct.Init.Parity         = UART_PARITY_NONE;
-    UART_struct.Init.StopBits       = UART_STOPBITS_1;
-    UART_struct.Init.WordLength     = UART_WORDLENGTH_8B;
-    (void)HAL_UART_Init(&UART_struct);
-}
+    RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+    RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
 
-/**
-  * @brief  Rx Transfer completed callback.
-  * @param  huart UART handle.
-  * @retval None
-  */
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
-{
-    /* CUBA library stores the Rx data */
-    MOD_CUBA_GetUartData(huart, uart_rx_byte);  
+    /** Initializes the RCC Oscillators according to the specified parameters
+    * in the RCC_OscInitTypeDef structure.
+    */
+    RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_NONE;
+    RCC_OscInitStruct.LSEState = RCC_LSE_OFF;
+    RCC_OscInitStruct.HSIState = RCC_HSI_ON;
+    RCC_OscInitStruct.HSIDiv = RCC_HSI_DIV1;
+    RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
+    RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+    RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
+    RCC_OscInitStruct.PLL.PLLM = RCC_PLLM_DIV1;
+    RCC_OscInitStruct.PLL.PLLN = 6;
+    RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
+    RCC_OscInitStruct.PLL.PLLQ = RCC_PLLQ_DIV2;
+    RCC_OscInitStruct.PLL.PLLR = RCC_PLLR_DIV2;
+    HAL_RCC_OscConfig(&RCC_OscInitStruct);
 
-    /* Receive an amount of data in interrupt mode. */
-    (void)HAL_UART_Receive_IT(&UART_struct, &uart_rx_byte, 1);
-}
-
-/**
-  * @brief Tx Transfer completed callback.
-  * @param huart UART handle.
-  * @retval None
-  */
-void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
-{
-    /* CUBA library confirms the Tx Transfer is completed */
-    MOD_CUBA_GetUartTxCpltFlag( huart );
-}
-
-/**
-  * @brief CUBA library initialization function.
-  * @param none
-  * @retval None
-  */
-void CUBA_init(void)
-{
-    CUBA_Handle.UARTHandler     = &UART_struct;               
-    MOD_CUBA_Init(&CUBA_Handle);
+    /** Initializes the CPU, AHB and APB buses clocks
+    */
+    RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
+                                  |RCC_CLOCKTYPE_PCLK1;
+    RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+    RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+    RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
+    HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2);
 }

@@ -1,15 +1,18 @@
 #include "CUBA.h"
 #include "queue.h"
 
-static     void              CUBA_string          ( CUBA_HandleTypeDef *hcuba, CUBA_RxMsgTypeDef *hrxmsg );
-static     HAL_StatusTypeDef cmd_process          (uint8_t *cmd);
-static     uint8_t           intToHex             ( uint32_t val, uint8_t* str );
-static     void              integerToString      ( uint32_t value, uint8_t *str );
-static     uint64_t          hexToInt             (uint8_t* str);
+static     void              CUBA_string                ( CUBA_HandleTypeDef *hcuba, CUBA_RxMsgTypeDef *hrxmsg );
+static     HAL_StatusTypeDef cmd_process                (uint8_t *cmd);
+static     uint8_t           intToHex                   ( uint32_t val, uint8_t* str );
+static     void              integerToString            ( uint32_t value, uint8_t *str );
+static     uint64_t          hexToInt                   (uint8_t* str);
+static     void              MOD_CUBA_GetUartData       ( UART_HandleTypeDef *huart, uint8_t data );
+static     void              MOD_CUBA_GetUartTxCpltFlag ( UART_HandleTypeDef *huart );
 
 static QUEUE_HandleTypeDef fdcan_queue_struct     =   {0};
 static QUEUE_HandleTypeDef uart_queue_struct      =   {0};
 static CUBA_HandleTypeDef  *CUBA_HandlePtr        =   NULL;
+static uint8_t             uart_rx_byte;        //UART reception variable
 
 /**
   * @brief Initializes the CUBA library necessary peripherals.
@@ -24,14 +27,40 @@ HAL_StatusTypeDef MOD_CUBA_Init( CUBA_HandleTypeDef *hcuba )
     {
         return HAL_ERROR; 
     }
-    
-    /* check the USART instance equals USART2 */
-    if(hcuba->UARTHandler->Instance != USART2)
-    {
-        return HAL_ERROR;  
-    }
 
     (void)memset(hcuba->CUBA_buffer, 0, sizeof(hcuba->CUBA_buffer));
+
+    GPIO_InitTypeDef gpio_struct;
+
+    /* GPIOA and USART2 Clock enable */
+    __HAL_RCC_USART2_CLK_ENABLE();
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+
+    /* PA2 and PA3 GPIOs Init as USART2 AF */
+    gpio_struct.Alternate = GPIO_AF1_USART2;
+    gpio_struct.Mode = GPIO_MODE_AF_PP;
+    gpio_struct.Pin = GPIO_PIN_2 | GPIO_PIN_3;
+    gpio_struct.Pull = GPIO_PULLUP;
+    gpio_struct.Speed = GPIO_SPEED_FREQ_HIGH;
+    HAL_GPIO_Init(GPIOA, &gpio_struct);
+    
+    /* UART Init */
+    hcuba->UARTHandler.Instance            = USART2;
+    hcuba->UARTHandler.Init.BaudRate       = 115200;
+    hcuba->UARTHandler.Init.ClockPrescaler = UART_PRESCALER_DIV1;
+    hcuba->UARTHandler.Init.HwFlowCtl      = UART_HWCONTROL_NONE;
+    hcuba->UARTHandler.Init.Mode           = UART_MODE_TX_RX;
+    hcuba->UARTHandler.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLED;
+    hcuba->UARTHandler.Init.OverSampling   = UART_OVERSAMPLING_16;
+    hcuba->UARTHandler.Init.Parity         = UART_PARITY_NONE;
+    hcuba->UARTHandler.Init.StopBits       = UART_STOPBITS_1;
+    hcuba->UARTHandler.Init.WordLength     = UART_WORDLENGTH_8B;
+    (void)HAL_UART_Init(&hcuba->UARTHandler);
+
+    /* USART2 interrupt init */
+    /* USART2_LPUART2_IRQn interrupt configuration */
+    HAL_NVIC_SetPriority(USART2_LPUART2_IRQn, 2, 0);
+    HAL_NVIC_EnableIRQ(USART2_LPUART2_IRQn);
 
     /* DMA peripheral clock enable */
     __HAL_RCC_DMA1_CLK_ENABLE();
@@ -57,7 +86,22 @@ HAL_StatusTypeDef MOD_CUBA_Init( CUBA_HandleTypeDef *hcuba )
     HAL_NVIC_EnableIRQ(DMA1_Channel1_IRQn);
 
     /* Linking UART Tx DMA Handle parameters */
-    __HAL_LINKDMA(hcuba->UARTHandler, hdmatx, hcuba->DMAHandler); 
+    hcuba->UARTHandler.hdmatx = &(hcuba->DMAHandler); 
+    hcuba->DMAHandler.Parent  = &(hcuba->UARTHandler);
+
+    GPIO_InitTypeDef GpioCanStruct;
+
+    /* GPIO and CAN Clock enable */
+    __HAL_RCC_FDCAN_CLK_ENABLE();
+    __HAL_RCC_GPIOB_CLK_ENABLE();
+
+    /* pin 0(tx) and pin 1(rx) set as AF for FDCAN2*/
+    GpioCanStruct.Mode      = GPIO_MODE_AF_PP;
+    GpioCanStruct.Alternate = GPIO_AF3_FDCAN2;
+    GpioCanStruct.Pin       = GPIO_PIN_0 | GPIO_PIN_1;
+    GpioCanStruct.Pull      = GPIO_NOPULL;
+    GpioCanStruct.Speed     = GPIO_SPEED_FREQ_HIGH;
+    HAL_GPIO_Init(GPIOB, &GpioCanStruct);
 
     /* FDCAN2 Init */
     hcuba->CANHandler.Instance                     =   FDCAN2;
@@ -130,6 +174,9 @@ HAL_StatusTypeDef MOD_CUBA_Init( CUBA_HandleTypeDef *hcuba )
     /* FDCAN2 Start */
     HAL_FDCAN_Start(&(hcuba->CANHandler));
 
+    /* Receive an amount of data in interrupt mode. */
+    (void)HAL_UART_Receive_IT(&hcuba->UARTHandler, &uart_rx_byte, 1);
+
     return HAL_OK;
 }
 
@@ -190,7 +237,7 @@ HAL_StatusTypeDef MOD_CUBA_Init( CUBA_HandleTypeDef *hcuba )
             CUBA_string(hcuba, &RxMsgToRead);
 
             /* DMA UART Transmit of Rx FDCAN analyzed data */
-            HAL_UART_Transmit_DMA(hcuba->UARTHandler, hcuba->CUBA_buffer, STRING_LENGTH);
+            HAL_UART_Transmit_DMA(&hcuba->UARTHandler, hcuba->CUBA_buffer, STRING_LENGTH);
             hcuba->uartCpltFlag = RESET;
         }
         else
@@ -310,6 +357,11 @@ static void CUBA_string( CUBA_HandleTypeDef *hcuba, CUBA_RxMsgTypeDef *hrxmsg)
 
 }
 
+/**
+  * @brief Function to check the Rx UART command
+  * @param cmd Pointer to a u8 data elements.
+  * @retval HAL_StatusTypeDef
+  **/
 static HAL_StatusTypeDef cmd_process(uint8_t *cmd)
 {
     uint16_t pID    = 0;
@@ -435,6 +487,11 @@ static void integerToString(uint32_t value, uint8_t *str)
     }
 }
 
+/**
+  * @brief Converts ASCII hexadecimal strings to an integer values.
+  * @param str   Pointer to data buffer (u8 data elements).
+  * @retval 64 bits integer value
+  **/
 static uint64_t hexToInt(uint8_t* str)
 {
     uint64_t decimal = 0;
@@ -474,6 +531,14 @@ static uint64_t hexToInt(uint8_t* str)
     return decimal;
 }
 
+/**
+  * @brief  Rx FIFO 1 callback.
+  * @param  hfdcan pointer to an FDCAN_HandleTypeDef structure that contains
+  *         the configuration information for the specified FDCAN.
+  * @param  RxFifo1ITs indicates which Rx FIFO 1 interrupts are signalled.
+  *         This parameter can be any combination of @arg FDCAN_Rx_Fifo1_Interrupts.
+  * @retval None
+  */
 void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo1ITs)    
 {
     CUBA_RxMsgTypeDef RxMsgToWrite = {0};
@@ -495,6 +560,48 @@ void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo1ITs)
         }   
     }
     
+}
+
+/**
+  * @brief  Rx Transfer completed callback.
+  * @param  huart UART handle.
+  * @retval None
+  */
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+    /* CUBA library stores the Rx data */
+    MOD_CUBA_GetUartData(huart, uart_rx_byte);  
+
+    /* Receive an amount of data in interrupt mode. */
+    (void)HAL_UART_Receive_IT(&CUBA_HandlePtr->UARTHandler, &uart_rx_byte, 1);
+}
+
+/**
+  * @brief Tx Transfer completed callback.
+  * @param huart UART handle.
+  * @retval None
+  */
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
+{
+    /* CUBA library confirms the Tx Transfer is completed */
+    MOD_CUBA_GetUartTxCpltFlag( huart );
+}
+
+/** INTERRUPT VECTORS **/
+
+void USART2_LPUART2_IRQHandler(void)    /* USART2 interrupt vector */
+{
+    HAL_UART_IRQHandler(&CUBA_HandlePtr->UARTHandler);
+}
+
+void TIM17_FDCAN_IT1_IRQHandler(void)   /* FDCAN2 interrupt vector */
+{
+    HAL_FDCAN_IRQHandler(&CUBA_HandlePtr->CANHandler);
+}
+
+void DMA1_Channel1_IRQHandler(void)     /* DMA1 interrupt vector */
+{
+  HAL_DMA_IRQHandler(&CUBA_HandlePtr->DMAHandler);
 }
 
 

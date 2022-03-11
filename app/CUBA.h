@@ -25,7 +25,7 @@
     /* CUBA_HandleTypeDef structure */
     typedef struct
     {
-        UART_HandleTypeDef      *UARTHandler;           //pointer to UART_HandleTypeDef structure CUBA library shall use
+        UART_HandleTypeDef      UARTHandler;          
         FDCAN_HandleTypeDef     CANHandler;               
         FDCAN_TxHeaderTypeDef   CANTxHeader;           
         FDCAN_RxHeaderTypeDef   CANRxHeader;           
@@ -42,7 +42,5 @@
     /* CUBA Prototype Functions */
     HAL_StatusTypeDef MOD_CUBA_Init              ( CUBA_HandleTypeDef *hcuba );
     HAL_StatusTypeDef MOD_CUBA_PeriodicTask      ( CUBA_HandleTypeDef *hcuba );
-    void              MOD_CUBA_GetUartData       ( UART_HandleTypeDef *huart, uint8_t data );
-    void              MOD_CUBA_GetUartTxCpltFlag ( UART_HandleTypeDef *huart );
 
 #endif
